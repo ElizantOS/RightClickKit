@@ -173,6 +173,19 @@
 
 经验：文件扫描工具要把“磁盘工作”和“UI 发布”分开设计。`du` 结果可以频繁产生，但 SwiftUI 不应该按每个结果重画整棵视图；用心跳合并发布，通常比盲目提高并发更快也更稳。
 
+### 11. 节流后必须明确告诉用户后台仍在扫描
+
+问题：UI 发布改成心跳合并后，界面更顺滑了，但如果没有明显状态提示，用户会觉得“怎么一点看不出来还在扫”。
+
+解决：
+
+- 在 Header 的总大小旁边增加后台扫描 badge。
+- 未完成时用 `arrow.triangle.2.circlepath` 持续旋转，显示 active / queued 数量。
+- Inspector footer 增加完整状态条，区分 running、paused、complete。
+- 保留 Pause/Resume 和 Stop 控制，让状态提示和操作入口在同一区域。
+
+经验：节流不是隐藏进度。只要后台任务仍在运行，就必须有持续、低成本、易扫读的 activity indicator。尤其是 macOS 工具窗口，用户需要一眼知道“还在工作、暂停了、还是已经完成”。
+
 ## 当前架构要点
 
 - `rck` CLI 负责安装服务、生成目录树、启动存储分析 viewer。
@@ -216,6 +229,7 @@ swift build --disable-sandbox --disable-build-manifest-caching --cache-path .bui
 3. 后台扫描状态必须可信。
 4. detail 里的只读派生内容不要用 `@State` 缓存。
 5. 扫描结果和 SwiftUI 发布要解耦，用心跳节奏合并刷新。
-6. 原生 macOS App 要尊重系统窗口、toolbar、material 和 AppKit 能力。
+6. 后台任务节流后仍要有明确 activity indicator。
+7. 原生 macOS App 要尊重系统窗口、toolbar、material 和 AppKit 能力。
 
 把这些事守住，RightClickKit 的存储分析就会从“能用”走向“真的顺手”。

@@ -197,6 +197,8 @@ private struct HeaderView: View {
 
                 Spacer(minLength: 18)
 
+                BackgroundScanBadge(progress: progress)
+
                 Text(StorageFormatter.bytes(selectedNode.bytes))
                     .font(.system(size: 22, weight: .medium))
                     .monospacedDigit()
@@ -210,6 +212,63 @@ private struct HeaderView: View {
 
             ScanProgressBar(progress: progress)
                 .padding(.top, 7)
+        }
+    }
+}
+
+private struct BackgroundScanBadge: View {
+    let progress: StorageScanProgress
+    @State private var rotation = 0.0
+
+    private var isActive: Bool {
+        !progress.isComplete && progress.activeBranches > 0
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: progress.isComplete ? "checkmark.circle" : "arrow.triangle.2.circlepath")
+                .font(.system(size: 12, weight: .semibold))
+                .symbolRenderingMode(.monochrome)
+                .rotationEffect(.degrees(isActive ? rotation : 0))
+
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(progress.isComplete ? StoragePalette.secondaryText : StoragePalette.blue)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .rckGlassSurface(in: Capsule(), interactive: false)
+        .onAppear {
+            updateAnimation()
+        }
+        .onChange(of: isActive) { _, _ in
+            updateAnimation()
+        }
+        .accessibilityLabel(label)
+    }
+
+    private var label: String {
+        if progress.isComplete {
+            return "Complete"
+        }
+
+        let queued = progress.queuedBranches
+        if queued > 0 {
+            return "\(progress.activeBranches) active · \(queued) queued"
+        }
+
+        return "\(progress.activeBranches) active"
+    }
+
+    private func updateAnimation() {
+        guard isActive else {
+            rotation = 0
+            return
+        }
+
+        withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: false)) {
+            rotation = 360
         }
     }
 }
@@ -603,7 +662,12 @@ private struct ScanProgressFooter: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 8) {
+            BackgroundScanStatusRow(
+                progress: progress,
+                backgroundScanningPaused: backgroundScanningPaused
+            )
+
             HStack(spacing: 10) {
                 if !progress.isComplete {
                     ProgressView()
@@ -657,6 +721,82 @@ private struct ScanProgressFooter: View {
             }
         }
         .padding(.top, 2)
+    }
+}
+
+private struct BackgroundScanStatusRow: View {
+    let progress: StorageScanProgress
+    let backgroundScanningPaused: Bool
+    @State private var rotation = 0.0
+
+    private var isActive: Bool {
+        !progress.isComplete && !backgroundScanningPaused && progress.activeBranches > 0
+    }
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .rotationEffect(.degrees(isActive ? rotation : 0))
+                .frame(width: 16, height: 16)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(StoragePalette.secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(progress.isComplete ? StoragePalette.secondaryText : StoragePalette.blue)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .rckGlassSurface(in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onAppear {
+            updateAnimation()
+        }
+        .onChange(of: isActive) { _, _ in
+            updateAnimation()
+        }
+    }
+
+    private var icon: String {
+        if progress.isComplete { return "checkmark.circle" }
+        if backgroundScanningPaused { return "pause.circle" }
+        return "arrow.triangle.2.circlepath"
+    }
+
+    private var title: String {
+        if progress.isComplete { return "Background scan complete" }
+        if backgroundScanningPaused { return "Background scan paused" }
+        return "Background scan running"
+    }
+
+    private var detail: String {
+        if progress.isComplete {
+            return "\(StorageFormatter.count(progress.scannedFolders)) folders indexed"
+        }
+
+        let queuedText = progress.queuedBranches > 0
+            ? " · \(progress.queuedBranches) queued"
+            : ""
+        return "\(progress.activeBranches) active\(queuedText)"
+    }
+
+    private func updateAnimation() {
+        guard isActive else {
+            rotation = 0
+            return
+        }
+
+        withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: false)) {
+            rotation = 360
+        }
     }
 }
 

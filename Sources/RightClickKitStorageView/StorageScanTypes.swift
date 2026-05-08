@@ -8,6 +8,7 @@ struct StorageScanProgress: Sendable, Equatable {
     var completedBranches: Int
     var totalBranches: Int
     var activeBranches: Int
+    var queuedBranches: Int
     var currentPath: String
     var isComplete: Bool
 
@@ -18,6 +19,7 @@ struct StorageScanProgress: Sendable, Equatable {
         completedBranches: 0,
         totalBranches: 0,
         activeBranches: 0,
+        queuedBranches: 0,
         currentPath: "",
         isComplete: false
     )

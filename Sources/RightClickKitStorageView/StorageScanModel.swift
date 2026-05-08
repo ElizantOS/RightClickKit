@@ -305,7 +305,8 @@ final class StorageScanModel: ObservableObject {
         pendingBranches: Int = 0,
         immediate: Bool = false
     ) {
-        let activeBranches = localActiveBranches + loadingPaths.count + queuedAutoExpandPaths.count + pendingBranches
+        let queuedBranches = queuedAutoExpandPaths.count + pendingBranches
+        let activeBranches = localActiveBranches + loadingPaths.count + queuedBranches
         let report = cachedReport(from: report)
         let snapshot = Self.snapshot(
             for: report,
@@ -313,6 +314,7 @@ final class StorageScanModel: ObservableObject {
             completedBranches: completedBranches,
             totalBranches: totalBranches,
             activeBranches: activeBranches,
+            queuedBranches: queuedBranches,
             isComplete: localIsComplete && activeBranches == 0
         )
         display(snapshot, immediately: immediate || currentDisplaySnapshot == nil || snapshot.progress.isComplete)
@@ -427,6 +429,7 @@ final class StorageScanModel: ObservableObject {
         completedBranches: Int? = nil,
         totalBranches: Int? = nil,
         activeBranches: Int = 0,
+        queuedBranches: Int = 0,
         isComplete: Bool = true
     ) -> StorageScanSnapshot {
         StorageScanSnapshot(
@@ -438,6 +441,7 @@ final class StorageScanModel: ObservableObject {
                 completedBranches: completedBranches ?? report.root.children.filter { $0.bytes > 0 || $0.fileCount > 0 }.count,
                 totalBranches: totalBranches ?? report.root.children.count,
                 activeBranches: activeBranches,
+                queuedBranches: queuedBranches,
                 currentPath: currentPath,
                 isComplete: isComplete
             )
