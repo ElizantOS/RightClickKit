@@ -20,6 +20,8 @@ Then use Finder:
 
 ```text
 Right-click a file or folder -> Quick Actions/Services -> Open in Code
+Right-click a file or folder -> Quick Actions/Services -> Show Directory Tree
+Right-click a file or folder -> Quick Actions/Services -> Analyze Storage
 ```
 
 You can also launch the app:
@@ -50,7 +52,13 @@ It keeps your repository files and logs.
 ~/.rightclickkit/bin/rck list
 ~/.rightclickkit/bin/rck run open-in-code /path/to/folder
 ~/.rightclickkit/bin/rck logs open-in-code
+~/.rightclickkit/bin/rck report directory-tree [--no-open] /path/to/folder
+~/.rightclickkit/bin/rck report storage-analysis [--no-open] /path/to/folder
 ```
+
+`storage-analysis` opens the native Storage Analysis window immediately and scans
+in the background. With `--no-open`, it writes local JSON data instead.
+`directory-tree` writes a text report and opens it in TextEdit.
 
 ## Service Format
 
@@ -88,6 +96,8 @@ Supported action types:
 - `openTerminalHere`
 - `copyPaths`
 - `runCommand`
+- `showDirectoryTree`
+- `analyzeStorage`
 
 Old services without `mode`/`action` are still loaded as `rawScript`.
 
@@ -96,6 +106,8 @@ At runtime, scripts receive:
 - `"$@"`: selected Finder paths
 - `RCK_SERVICE_ID`: the service id
 - `RCK_ITEMS_FILE`: a newline-delimited file of selected paths
+- `RCK_HELPER`: the `rck` helper executable path
+- `RCK_REPOSITORY_ROOT`: the configured RightClickKit repository root
 
 The working directory is the selected folder, or the parent folder of the first selected file.
 

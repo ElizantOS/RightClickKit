@@ -77,6 +77,26 @@ public enum ActionScriptGenerator {
             #!/bin/zsh
             \(action.command)
             """
+
+        case .showDirectoryTree:
+            return reportScript(kind: "directory-tree")
+
+        case .analyzeStorage:
+            return reportScript(kind: "storage-analysis")
         }
+    }
+
+    private static func reportScript(kind: String) -> String {
+        """
+        #!/bin/zsh
+        set -euo pipefail
+
+        rck="${RCK_HELPER:-}"
+        if [[ -z "$rck" ]]; then
+          rck="$HOME/.rightclickkit/bin/rck"
+        fi
+
+        "$rck" report \(kind) "$@"
+        """
     }
 }

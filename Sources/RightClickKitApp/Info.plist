@@ -11,6 +11,8 @@
   <string>RightClickKit</string>
   <key>CFBundleDisplayName</key>
   <string>RightClickKit</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleSignature</key>

@@ -182,9 +182,9 @@ public struct WorkflowInstaller {
         fi
 
         "$rck" run \(Shell.quote(service.id)) "${items[@]}" >> "$launcher_log" 2>&1
-        status=$?
-        echo "exit: $status" >> "$launcher_log"
-        exit "$status"
+        rck_status=$?
+        echo "exit: $rck_status" >> "$launcher_log"
+        exit "$rck_status"
         """
 
         return """

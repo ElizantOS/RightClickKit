@@ -28,6 +28,9 @@ struct RCKCLI {
             case "logs":
                 try logs(rest)
                 return 0
+            case "report":
+                try report(rest)
+                return 0
             case "config":
                 try config()
                 return 0
@@ -98,6 +101,42 @@ struct RCKCLI {
         print(url.path)
     }
 
+    private func report(_ args: [String]) throws {
+        let shouldOpen = !args.contains("--no-open")
+        let filteredArgs = args.filter { $0 != "--no-open" }
+
+        guard let kind = filteredArgs.first else {
+            throw RightClickKitError.invalidValue(
+                "usage: rck report <directory-tree|storage-analysis> [--no-open] [paths...]",
+                URL(fileURLWithPath: ".")
+            )
+        }
+
+        let items = Array(filteredArgs.dropFirst())
+        let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        switch kind {
+        case "directory-tree":
+            let reportURL = try ReportGenerator.writeDirectoryTreeReport(for: items, currentDirectory: currentDirectory)
+            if shouldOpen {
+                try openReport(reportURL)
+            }
+            print("Report: \(reportURL.path)")
+        case "storage-analysis":
+            if shouldOpen {
+                try openStorageAnalysis(items: items, currentDirectory: currentDirectory)
+                print("Storage Analysis: opened native viewer")
+            } else {
+                let reportURL = try ReportGenerator.writeStorageAnalysisReport(for: items, currentDirectory: currentDirectory)
+                print("Report: \(reportURL.path)")
+            }
+        default:
+            throw RightClickKitError.invalidValue(
+                "unknown report kind: \(kind)",
+                URL(fileURLWithPath: ".")
+            )
+        }
+    }
+
     private func config() throws {
         let config = try ConfigStore(paths: paths).load()
         let data = try JSONEncoder.pretty.encode(config)
@@ -140,6 +179,75 @@ struct RCKCLI {
             .path
     }
 
+    private func openReport(_ url: URL) throws {
+        let textEditResult = try ProcessRunner.runCapturing(
+            "/usr/bin/open",
+            arguments: ["-a", "TextEdit", url.path]
+        )
+        if textEditResult.status == 0 {
+            return
+        }
+
+        let fallbackResult = try ProcessRunner.runCapturing("/usr/bin/open", arguments: [url.path])
+        if fallbackResult.status != 0 {
+            throw RightClickKitError.commandFailed("open \(url.path)", fallbackResult.status)
+        }
+    }
+
+    private func openStorageAnalysis(items: [String], currentDirectory: URL) throws {
+        let scanItems = items.isEmpty ? [currentDirectory.path] : items
+        let viewerArguments = ["--scan", "--cwd", currentDirectory.path, "--"] + scanItems
+
+        if let appURL = storageViewerAppURL() {
+            let result = try ProcessRunner.runCapturing(
+                "/usr/bin/open",
+                arguments: ["-n", appURL.path, "--args"] + viewerArguments
+            )
+            if result.status == 0 {
+                return
+            }
+        }
+
+        let viewer = storageViewerExecutablePath()
+        guard FileManager.default.isExecutableFile(atPath: viewer) else {
+            throw RightClickKitError.invalidValue(
+                "Storage viewer not installed. Expected \(viewer)",
+                currentDirectory
+            )
+        }
+        try ProcessRunner.runDetached(viewer, arguments: viewerArguments)
+    }
+
+    private func storageViewerExecutablePath() -> String {
+        if let override = ProcessInfo.processInfo.environment["RIGHTCLICKKIT_STORAGE_VIEWER"], !override.isEmpty {
+            return override
+        }
+
+        return URL(fileURLWithPath: executablePath())
+            .deletingLastPathComponent()
+            .appendingPathComponent("RightClickKitStorageView")
+            .path
+    }
+
+    private func storageViewerAppURL() -> URL? {
+        let fileManager = FileManager.default
+
+        if let override = ProcessInfo.processInfo.environment["RIGHTCLICKKIT_STORAGE_VIEWER_APP"], !override.isEmpty {
+            let url = URL(fileURLWithPath: override)
+            if fileManager.fileExists(atPath: url.path) {
+                return url
+            }
+        }
+
+        let installedURL = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Applications/RightClickKit.app/Contents/Helpers/RightClickKitStorageView.app")
+        if fileManager.fileExists(atPath: installedURL.path) {
+            return installedURL
+        }
+
+        return nil
+    }
+
     private func printHelp() {
         print("""
         RightClickKit CLI
@@ -150,6 +258,7 @@ struct RCKCLI {
           rck list [--repo PATH]
           rck run <service-id> [paths...]
           rck logs [service-id]
+          rck report <directory-tree|storage-analysis> [--no-open] [paths...]
           rck config
         """)
     }

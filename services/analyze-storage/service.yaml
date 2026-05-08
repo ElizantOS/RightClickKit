@@ -1,0 +1,17 @@
+id: analyze-storage
+title: Analyze Storage
+description: Open a native storage map for selected files or folders.
+accepts: [file, folder]
+shell: /bin/zsh
+script: action.zsh
+enabled: true
+confirm: false
+mode: action
+action:
+  type: analyzeStorage
+  appName: Cursor
+  bundleID: ""
+  codeCommand: /usr/local/bin/code
+  terminalApp: Terminal
+  command: pwd && ls -la
+  pathFormat: lines

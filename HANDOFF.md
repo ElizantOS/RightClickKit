@@ -89,6 +89,8 @@ Environment given to service scripts:
 - `"$@"`: selected Finder paths.
 - `RCK_SERVICE_ID`: current action ID.
 - `RCK_ITEMS_FILE`: temp file containing one path per line.
+- `RCK_HELPER`: configured `rck` helper path.
+- `RCK_REPOSITORY_ROOT`: configured repository root.
 - `PATH`: extended with `/usr/local/bin` and `/opt/homebrew/bin`.
 
 Logs:
@@ -181,11 +183,18 @@ services/<service-id>/service.yaml
 services/<service-id>/action.zsh
 ```
 
-Current built-in service:
+Current built-in services:
 
 ```text
+services/analyze-storage/
 services/open-in-code/
+services/show-directory-tree/
 ```
+
+`Analyze Storage` opens a native macOS storage analysis window immediately and
+scans in the background. The completed view shows a dark radial storage map,
+top-level usage bars, and file/folder counts. `--no-open` still generates local
+JSON data. `Show Directory Tree` still generates a plain text tree report.
 
 Current YAML model:
 
@@ -216,6 +225,8 @@ Supported action types:
 - `openTerminalHere`
 - `copyPaths`
 - `runCommand`
+- `showDirectoryTree`
+- `analyzeStorage`
 
 Backwards compatibility:
 
@@ -442,4 +453,3 @@ Do not commit:
 - `~/.rightclickkit`,
 - logs,
 - generated user workflows from `~/Library/Services`.
-

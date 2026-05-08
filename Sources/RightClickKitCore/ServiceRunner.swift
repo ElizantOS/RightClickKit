@@ -25,6 +25,8 @@ public struct ServiceRunner {
         var environment = ProcessInfo.processInfo.environment
         environment["RCK_SERVICE_ID"] = serviceID
         environment["RCK_ITEMS_FILE"] = itemsFile.path
+        environment["RCK_HELPER"] = config.rckPath
+        environment["RCK_REPOSITORY_ROOT"] = config.repositoryRoot
         environment["PATH"] = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (environment["PATH"] ?? "")
 
         appendLog(serviceID: serviceID, text: "\n[\(Date())] run \(serviceID)\n")

@@ -89,6 +89,8 @@ struct SidebarActionRow: View {
         case .openTerminalHere: "terminal"
         case .copyPaths: "doc.on.doc"
         case .runCommand: "play.rectangle"
+        case .showDirectoryTree: "list.bullet.indent"
+        case .analyzeStorage: "chart.pie"
         case nil: "terminal"
         }
     }

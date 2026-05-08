@@ -10,7 +10,8 @@ let package = Package(
     products: [
         .library(name: "RightClickKitCore", targets: ["RightClickKitCore"]),
         .executable(name: "rck", targets: ["rck"]),
-        .executable(name: "RightClickKitApp", targets: ["RightClickKitApp"])
+        .executable(name: "RightClickKitApp", targets: ["RightClickKitApp"]),
+        .executable(name: "RightClickKitStorageView", targets: ["RightClickKitStorageView"])
     ],
     targets: [
         .target(name: "RightClickKitCore"),
@@ -25,6 +26,19 @@ let package = Package(
                     "-Xlinker", "__TEXT",
                     "-Xlinker", "__info_plist",
                     "-Xlinker", "Sources/RightClickKitApp/Info.plist"
+                ])
+            ]
+        ),
+        .executableTarget(
+            name: "RightClickKitStorageView",
+            dependencies: ["RightClickKitCore"],
+            exclude: ["Info.plist"],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", "Sources/RightClickKitStorageView/Info.plist"
                 ])
             ]
         )

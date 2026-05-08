@@ -1,0 +1,17 @@
+id: show-directory-tree
+title: Show Directory Tree
+description: Generate a TextEdit directory tree report for selected files or folders.
+accepts: [file, folder]
+shell: /bin/zsh
+script: action.zsh
+enabled: true
+confirm: false
+mode: action
+action:
+  type: showDirectoryTree
+  appName: Cursor
+  bundleID: ""
+  codeCommand: /usr/local/bin/code
+  terminalApp: Terminal
+  command: pwd && ls -la
+  pathFormat: lines

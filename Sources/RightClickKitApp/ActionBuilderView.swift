@@ -150,6 +150,16 @@ struct ActionFieldsView: View {
             Text("Runs in the selected folder, or the parent folder of the selected file.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        case .showDirectoryTree:
+            FieldRow(title: "Report") {
+                Text("TextEdit directory tree")
+                    .foregroundStyle(.secondary)
+            }
+        case .analyzeStorage:
+            FieldRow(title: "Report") {
+                Text("Interactive storage map")
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

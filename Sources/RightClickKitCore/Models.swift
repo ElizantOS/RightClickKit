@@ -39,6 +39,8 @@ public enum ActionType: String, Codable, CaseIterable, Equatable {
     case openTerminalHere
     case copyPaths
     case runCommand
+    case showDirectoryTree
+    case analyzeStorage
 
     public var title: String {
         switch self {
@@ -47,6 +49,8 @@ public enum ActionType: String, Codable, CaseIterable, Equatable {
         case .openTerminalHere: "Open Terminal Here"
         case .copyPaths: "Copy Paths"
         case .runCommand: "Run Command"
+        case .showDirectoryTree: "Show Directory Tree"
+        case .analyzeStorage: "Analyze Storage"
         }
     }
 }

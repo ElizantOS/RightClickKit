@@ -42,4 +42,22 @@ public enum ProcessRunner {
         let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
         return (process.terminationStatus, String(data: data, encoding: .utf8) ?? "")
     }
+
+    public static func runDetached(
+        _ executable: String,
+        arguments: [String] = [],
+        currentDirectory: URL? = nil,
+        environment: [String: String]? = nil
+    ) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.currentDirectoryURL = currentDirectory
+        if let environment {
+            process.environment = environment
+        }
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        try process.run()
+    }
 }

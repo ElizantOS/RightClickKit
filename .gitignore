@@ -1,6 +1,7 @@
 .DS_Store
 .build/
 .swiftpm/
+.codex/
 DerivedData/
 *.xcuserdata/
 *.xcworkspace/
@@ -10,4 +11,3 @@ DerivedData/
 # someone points them at the project by accident.
 .rightclickkit/
 *.log
-
