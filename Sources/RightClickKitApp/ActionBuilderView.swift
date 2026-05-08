@@ -15,15 +15,38 @@ struct ActionStatusView: View {
                 StatusBadge(status: action.status)
                 Toggle("Enabled", isOn: $action.enabled)
                     .toggleStyle(.switch)
-                Button("Save") { model.save(action) }
-                Button("Install") { model.saveAndInstall(action) }
-                Button("Test") { model.test(action) }
+                Button {
+                    model.save(action)
+                } label: {
+                    Label("Save", systemImage: "square.and.arrow.down")
+                }
+                .rckGlassButton()
+
+                Button {
+                    model.saveAndInstall(action)
+                } label: {
+                    Label("Install", systemImage: "checkmark.circle")
+                }
+                .rckGlassButton(prominent: true)
+
+                Button {
+                    model.test(action)
+                } label: {
+                    Label("Test", systemImage: "play.circle")
+                }
+                .rckGlassButton()
             }
+            .controlSize(.small)
 
             TextField("Description", text: $action.description)
                 .textFieldStyle(.plain)
                 .foregroundStyle(.secondary)
         }
+        .padding(16)
+        .rckGlassSurface(
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous),
+            interactive: true
+        )
     }
 }
 
@@ -87,12 +110,15 @@ struct ActionBuilderView: View {
                         .foregroundStyle(.secondary)
                     HighlightedTextEditor(text: $action.rawScript, language: .shell)
                         .frame(minHeight: 300)
+                        .rckGlassSurface(in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
             }
         }
         .padding(16)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .rckGlassSurface(
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous),
+            interactive: true
+        )
     }
 }
 

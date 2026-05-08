@@ -16,11 +16,13 @@ final class RightClickKitController {
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 980, height: 680),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "RightClickKit"
+        window.titlebarAppearsTransparent = true
+        window.toolbarStyle = .unified
         window.center()
         window.contentView = NSHostingView(rootView: contentView)
         window.makeKeyAndOrderFront(nil)

@@ -21,16 +21,19 @@ struct HighlightedTextEditor: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = false
-        scrollView.borderType = .bezelBorder
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
 
         let textView = NSTextView()
         textView.isRichText = false
         textView.isEditable = !isReadOnly
-        textView.backgroundColor = isReadOnly ? NSColor.controlBackgroundColor : NSColor.textBackgroundColor
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
         textView.allowsUndo = true
+        textView.textContainerInset = NSSize(width: 8, height: 8)
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
@@ -50,7 +53,8 @@ struct HighlightedTextEditor: NSViewRepresentable {
         context.coordinator.language = language
         guard let textView = scrollView.documentView as? NSTextView else { return }
         textView.isEditable = !isReadOnly
-        textView.backgroundColor = isReadOnly ? NSColor.controlBackgroundColor : NSColor.textBackgroundColor
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
         if textView.string != text {
             context.coordinator.apply(text)
         } else {

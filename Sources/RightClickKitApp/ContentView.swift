@@ -25,6 +25,7 @@ struct ContentView: View {
                 } label: {
                     Label("Reload", systemImage: "arrow.clockwise")
                 }
+                .help("Reload services and installed apps")
             }
         } detail: {
             if let selectedAction {
@@ -37,18 +38,47 @@ struct ContentView: View {
                 )
             }
         }
+        .navigationSplitViewStyle(.balanced)
         .safeAreaInset(edge: .bottom) {
-            HStack {
-                Text(model.status)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Spacer()
-                Button("Install Enabled") { model.install() }
-                Button("Uninstall Managed") { model.uninstall() }
-                Button("Open Logs") { model.openLogs() }
+            RCKGlassGroup(spacing: 10) {
+                HStack(spacing: 10) {
+                    Label(model.status, systemImage: "info.circle")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 12)
+
+                    Button {
+                        model.install()
+                    } label: {
+                        Label("Install Enabled", systemImage: "checkmark.circle")
+                    }
+                    .rckGlassButton(prominent: true)
+
+                    Button {
+                        model.uninstall()
+                    } label: {
+                        Label("Uninstall Managed", systemImage: "trash")
+                    }
+                    .rckGlassButton()
+
+                    Button {
+                        model.openLogs()
+                    } label: {
+                        Label("Open Logs", systemImage: "doc.text.magnifyingglass")
+                    }
+                    .rckGlassButton()
+                }
+                .controlSize(.small)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .rckGlassSurface(
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous),
+                    interactive: true
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
             }
-            .padding(10)
-            .background(.bar)
         }
         .onAppear {
             model.reload()
@@ -102,13 +132,15 @@ struct ActionDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                ActionStatusView(action: action, model: model)
-                ActionBuilderView(action: action, model: model)
-                LogsPanelView(action: action, model: model)
-                AdvancedPanelView(action: action)
+            RCKGlassGroup(spacing: 12) {
+                VStack(alignment: .leading, spacing: 16) {
+                    ActionStatusView(action: action, model: model)
+                    ActionBuilderView(action: action, model: model)
+                    LogsPanelView(action: action, model: model)
+                    AdvancedPanelView(action: action)
+                }
+                .padding(18)
             }
-            .padding(18)
         }
     }
 }

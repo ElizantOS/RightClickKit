@@ -24,17 +24,17 @@ enum StorageFormatter {
 }
 
 enum StoragePalette {
-    static let windowBackground = Color(red: 0.12, green: 0.13, blue: 0.16)
-    static let panelBackground = Color(red: 0.16, green: 0.17, blue: 0.21)
-    static let centerBackground = Color(red: 0.18, green: 0.19, blue: 0.23)
-    static let metricBackground = Color.white.opacity(0.045)
-    static let panelStroke = Color.white.opacity(0.075)
-    static let segmentStroke = Color(red: 0.12, green: 0.13, blue: 0.16).opacity(0.72)
-    static let primaryText = Color(red: 0.91, green: 0.92, blue: 0.95)
-    static let secondaryText = Color(red: 0.60, green: 0.63, blue: 0.69)
-    static let divider = Color.white.opacity(0.09)
-    static let track = Color.white.opacity(0.11)
-    static let blue = Color(red: 0.29, green: 0.55, blue: 1.0)
+    static let windowBackground = Color(nsColor: .windowBackgroundColor)
+    static let panelBackground = Color(nsColor: .controlBackgroundColor).opacity(0.62)
+    static let centerBackground = Color(nsColor: .controlBackgroundColor).opacity(0.70)
+    static let metricBackground = Color.primary.opacity(0.045)
+    static let panelStroke = Color.primary.opacity(0.08)
+    static let segmentStroke = Color(nsColor: .windowBackgroundColor).opacity(0.58)
+    static let primaryText = Color.primary
+    static let secondaryText = Color.secondary
+    static let divider = Color.primary.opacity(0.09)
+    static let track = Color.primary.opacity(0.11)
+    static let blue = Color.accentColor
     static let warning = Color(red: 1.0, green: 0.45, blue: 0.35)
 
     private static let palette: [(red: Double, green: Double, blue: Double)] = [

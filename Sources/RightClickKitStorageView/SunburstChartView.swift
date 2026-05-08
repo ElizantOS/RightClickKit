@@ -55,12 +55,7 @@ struct SunburstChartView: View {
                 }
                 .padding(14)
                 .frame(width: 156, height: 156)
-                .background(
-                    Circle()
-                        .fill(StoragePalette.centerBackground)
-                        .shadow(color: .black.opacity(0.22), radius: 18, y: 10)
-                )
-                .overlay(Circle().stroke(StoragePalette.panelStroke, lineWidth: 1))
+                .rckGlassSurface(in: Circle(), interactive: true)
             }
             .buttonStyle(.plain)
             .help(selectedNode.stableID == root.stableID ? "Root" : "Back")

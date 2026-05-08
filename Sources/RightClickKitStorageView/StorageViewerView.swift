@@ -57,39 +57,40 @@ struct StorageViewerView: View {
     }
 
     var body: some View {
-        HStack(spacing: 30) {
-            VStack(alignment: .leading, spacing: 18) {
-                HeaderView(report: report, progress: snapshot.progress, selectedNode: selectedNode)
+        RCKGlassGroup(spacing: 14) {
+            HStack(spacing: 26) {
+                VStack(alignment: .leading, spacing: 18) {
+                    HeaderView(report: report, progress: snapshot.progress, selectedNode: selectedNode)
 
-                SunburstChartView(
-                    root: report.root,
+                    SunburstChartView(
+                        root: report.root,
+                        selectedNode: selectedNode,
+                        onHover: hoverFromChart,
+                        onSelect: selectFromChart,
+                        onBack: popSelection
+                    )
+                        .frame(minWidth: 520, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
+                }
+                .layoutPriority(1)
+
+                StorageInspectorView(
+                    report: report,
+                    progress: snapshot.progress,
                     selectedNode: selectedNode,
-                    onHover: hoverFromChart,
-                    onSelect: selectFromChart,
-                    onBack: popSelection
+                    node: displayNode,
+                    loadingPaths: loadingPaths,
+                    scanningProgress: scanningProgress,
+                    expandedPaths: expandedPaths,
+                    onSelect: selectFromList,
+                    onExpand: onExpand,
+                    onPreviewPath: previewFromList
                 )
-                    .frame(minWidth: 520, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
-            }
-            .layoutPriority(1)
-
-            StorageInspectorView(
-                report: report,
-                progress: snapshot.progress,
-                selectedNode: selectedNode,
-                node: displayNode,
-                loadingPaths: loadingPaths,
-                scanningProgress: scanningProgress,
-                expandedPaths: expandedPaths,
-                onSelect: selectFromList,
-                onExpand: onExpand,
-                onPreviewPath: previewFromList
-            )
                 .frame(width: 370)
+            }
         }
         .padding(.horizontal, 28)
         .padding(.top, 24)
         .padding(.bottom, 26)
-        .background(StoragePalette.windowBackground)
         .foregroundStyle(StoragePalette.primaryText)
     }
 
@@ -321,13 +322,9 @@ private struct StorageInspectorView: View {
             ScanProgressFooter(progress: progress)
         }
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(StoragePalette.panelBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(StoragePalette.panelStroke, lineWidth: 1)
+        .rckGlassSurface(
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous),
+            interactive: true
         )
     }
 }
@@ -414,9 +411,9 @@ private struct InspectorEmptyStateView: View {
                 } label: {
                     Label("Scan Folder", systemImage: "bolt.horizontal.circle")
                 }
-                .buttonStyle(.borderless)
+                .rckGlassButton()
+                .controlSize(.small)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(StoragePalette.blue)
                 .padding(.top, 2)
             }
         }
@@ -479,10 +476,7 @@ private struct MetricTile: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, 11)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(StoragePalette.metricBackground)
-        )
+        .rckGlassSurface(in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -631,9 +625,9 @@ private struct MissingPathsView: View {
         }
         .foregroundStyle(StoragePalette.warning)
         .padding(11)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(StoragePalette.warning.opacity(0.12))
+        .rckGlassSurface(
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous),
+            interactive: false
         )
     }
 }
@@ -642,23 +636,26 @@ private struct StorageScanningView: View {
     let title: String
 
     var body: some View {
-        VStack(spacing: 18) {
-            ProgressView()
-                .controlSize(.large)
-                .tint(StoragePalette.blue)
+        RCKGlassGroup(spacing: 12) {
+            VStack(spacing: 18) {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(StoragePalette.blue)
 
-            Text(title)
-                .font(.system(size: 24, weight: .semibold))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: 520)
+                Text(title)
+                    .font(.system(size: 24, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 520)
 
-            Text("Scanning storage")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(StoragePalette.secondaryText)
+                Text("Scanning storage")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(StoragePalette.secondaryText)
+            }
+            .padding(28)
+            .rckGlassSurface(in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(StoragePalette.windowBackground)
         .foregroundStyle(StoragePalette.primaryText)
     }
 }
@@ -667,22 +664,25 @@ struct StorageViewerErrorView: View {
     let message: String
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "externaldrive.badge.exclamationmark")
-                .font(.system(size: 42, weight: .light))
-                .foregroundStyle(StoragePalette.warning)
+        RCKGlassGroup(spacing: 12) {
+            VStack(spacing: 14) {
+                Image(systemName: "externaldrive.badge.exclamationmark")
+                    .font(.system(size: 42, weight: .light))
+                    .foregroundStyle(StoragePalette.warning)
 
-            Text("Storage Analysis")
-                .font(.system(size: 24, weight: .semibold))
+                Text("Storage Analysis")
+                    .font(.system(size: 24, weight: .semibold))
 
-            Text(message)
-                .font(.system(size: 13))
-                .foregroundStyle(StoragePalette.secondaryText)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 460)
+                Text(message)
+                    .font(.system(size: 13))
+                    .foregroundStyle(StoragePalette.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 460)
+            }
+            .padding(28)
+            .rckGlassSurface(in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(StoragePalette.windowBackground)
         .foregroundStyle(StoragePalette.primaryText)
     }
 }
