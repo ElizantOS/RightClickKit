@@ -101,19 +101,19 @@ struct AdvancedPanelView: View {
 }
 
 private struct GeneratedScriptView: View {
-    @State var script: String
+    let script: String
 
     var body: some View {
-        HighlightedTextEditor(text: $script, language: .shell, isReadOnly: true)
+        HighlightedTextEditor(text: .constant(script), language: .shell, isReadOnly: true)
             .frame(minHeight: 180)
     }
 }
 
 private struct GeneratedYAMLView: View {
-    @State var text: String
+    let text: String
 
     var body: some View {
-        HighlightedTextEditor(text: $text, language: .yaml, isReadOnly: true)
+        HighlightedTextEditor(text: .constant(text), language: .yaml, isReadOnly: true)
             .frame(minHeight: 180)
     }
 }
