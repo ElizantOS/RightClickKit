@@ -1,0 +1,13 @@
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserdata/
+*.xcworkspace/
+*.xcodeproj/
+
+# Local installs and logs are generated outside the repo, but keep these out if
+# someone points them at the project by accident.
+.rightclickkit/
+*.log
+

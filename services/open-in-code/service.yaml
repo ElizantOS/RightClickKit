@@ -1,0 +1,17 @@
+id: open-in-code
+title: Open in Code
+description: Open selected files or folders in the code-compatible editor.
+accepts: [file, folder]
+shell: /bin/zsh
+script: action.zsh
+enabled: true
+confirm: false
+mode: action
+action:
+  type: openWithCodeEditor
+  appName: Cursor
+  bundleID: ""
+  codeCommand: /usr/local/bin/code
+  terminalApp: Terminal
+  command: pwd && ls -la
+  pathFormat: lines
