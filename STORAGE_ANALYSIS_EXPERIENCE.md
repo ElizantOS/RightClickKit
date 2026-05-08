@@ -138,6 +138,24 @@
 
 经验：新系统视觉 API 不要散落在业务视图里，先做一层小封装，后续维护会轻很多。
 
+### 9. 切换左侧 Action 后 Advanced 不刷新
+
+问题：右侧 `Advanced` 展开后，切换左侧功能，生成脚本和 `service.yaml` 仍然显示上一个 action 的内容。
+
+原因：
+
+- `GeneratedScriptView` 和 `GeneratedYAMLView` 把传入文本存进了本地 `@State`。
+- SwiftUI 在 sidebar-detail 布局中会复用 detail 子视图。
+- `@State` 的初始化只在视图身份第一次创建时生效，后续传入的新参数不会自动覆盖本地 state。
+
+解决：
+
+- 只读派生文本不再使用 `@State`。
+- 改为 `let script: String` / `let text: String`，并传给 `HighlightedTextEditor(text: .constant(...), isReadOnly: true)`。
+- 真正可编辑的 raw script 仍然使用 `$action.rawScript`，保持源数据由 `EditableAction` 拥有。
+
+经验：SwiftUI 里 `@State` 只适合视图自己拥有的临时状态，不适合缓存父级传入的派生数据。只读预览、生成脚本、生成 YAML 这类内容应该直接从当前 selection/model 派生，避免视图复用时显示旧数据。
+
 ## 当前架构要点
 
 - `rck` CLI 负责安装服务、生成目录树、启动存储分析 viewer。
@@ -179,6 +197,7 @@ swift build --disable-sandbox --disable-build-manifest-caching --cache-path .bui
 1. 先显示，再补全。
 2. hover/click 必须和磁盘 I/O 解耦。
 3. 后台扫描状态必须可信。
-4. 原生 macOS App 要尊重系统窗口、toolbar、material 和 AppKit 能力。
+4. detail 里的只读派生内容不要用 `@State` 缓存。
+5. 原生 macOS App 要尊重系统窗口、toolbar、material 和 AppKit 能力。
 
-把这四件事守住，RightClickKit 的存储分析就会从“能用”走向“真的顺手”。
+把这些事守住，RightClickKit 的存储分析就会从“能用”走向“真的顺手”。
