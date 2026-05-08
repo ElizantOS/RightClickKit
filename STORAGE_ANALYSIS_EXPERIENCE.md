@@ -156,6 +156,23 @@
 
 经验：SwiftUI 里 `@State` 只适合视图自己拥有的临时状态，不适合缓存父级传入的派生数据。只读预览、生成脚本、生成 YAML 这类内容应该直接从当前 selection/model 派生，避免视图复用时显示旧数据。
 
+### 10. 后台 `du` 太积极导致 UI 卡顿
+
+问题：后台递归扫描会持续启动 `du`，并且每个子项结果回来都发布一整棵 report 给 SwiftUI，导致 Canvas、Inspector 和 progress 高频重绘。刷新太频繁不只是 UI 卡，还会抢主线程和对象复制时间，间接拖慢扫描吞吐。
+
+解决：
+
+- 将扫描结果收集和 SwiftUI 发布解耦。
+- `StorageScanModel` 增加心跳式发布：后台可以持续收到 snapshot，但 UI 最多按固定节奏合并刷新一次。
+- 完成、点击下钻、命中缓存等用户可见关键节点仍然立即 flush。
+- 自动后台递归从多路并发改成单链路，降低默认深度、backlog 和 session 总量。
+- 手动下钻会暂停后台自动递归，优先响应用户当前路径。
+- UI 增加 `Pause/Resume Background` 和 `Stop Background` 控制。
+- `du` 用 `nice -n 10` 降低系统调度优先级，并在 task cancel 后停止继续排新工作。
+- expanded cache 增加上限，避免长时间递归后内存一直增长。
+
+经验：文件扫描工具要把“磁盘工作”和“UI 发布”分开设计。`du` 结果可以频繁产生，但 SwiftUI 不应该按每个结果重画整棵视图；用心跳合并发布，通常比盲目提高并发更快也更稳。
+
 ## 当前架构要点
 
 - `rck` CLI 负责安装服务、生成目录树、启动存储分析 viewer。
@@ -198,6 +215,7 @@ swift build --disable-sandbox --disable-build-manifest-caching --cache-path .bui
 2. hover/click 必须和磁盘 I/O 解耦。
 3. 后台扫描状态必须可信。
 4. detail 里的只读派生内容不要用 `@State` 缓存。
-5. 原生 macOS App 要尊重系统窗口、toolbar、material 和 AppKit 能力。
+5. 扫描结果和 SwiftUI 发布要解耦，用心跳节奏合并刷新。
+6. 原生 macOS App 要尊重系统窗口、toolbar、material 和 AppKit 能力。
 
 把这些事守住，RightClickKit 的存储分析就会从“能用”走向“真的顺手”。

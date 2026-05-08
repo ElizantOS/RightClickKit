@@ -39,9 +39,12 @@ enum StorageViewerRequest {
 
 @MainActor
 final class StorageScanModel: ObservableObject {
-    private static let maxConcurrentExpansions = 2
-    private static let maxAutomaticExpansionDepth = 10
-    private static let maxAutomaticExpansionBacklog = 96
+    private static let maxAutomaticConcurrentExpansions = 1
+    private static let maxAutomaticExpansionDepth = 6
+    private static let maxAutomaticExpansionBacklog = 24
+    private static let maxAutomaticExpansionsPerSession = 48
+    private static let maxExpandedCacheEntries = 80
+    private static let uiPublishIntervalNanoseconds: UInt64 = 350_000_000
 
     enum Phase {
         case scanning(title: String)
@@ -53,12 +56,27 @@ final class StorageScanModel: ObservableObject {
     @Published private(set) var loadingPaths: Set<String> = []
     @Published private(set) var scanningProgress: [String: StorageNodeScanSnapshot] = [:]
     @Published private(set) var expandedPaths: Set<String> = []
+    @Published private(set) var backgroundScanningPaused = false
 
     private let request: StorageViewerRequest
     private var didStart = false
     private var autoExpandQueue: [StorageAnalysisNode] = []
     private var queuedAutoExpandPaths: Set<String> = []
+    private var automaticLoadingPaths: Set<String> = []
+    private var automaticExpansionStarts = 0
     private var expandedCache: [String: StorageAnalysisNode] = [:]
+    private var expandedCacheOrder: [String] = []
+    private var progressByPath: [String: StorageNodeScanSnapshot] = [:]
+    private var pendingDisplaySnapshot: StorageScanSnapshot?
+    private var publishTask: Task<Void, Never>?
+    private var rootScanTask: Task<Void, Never>?
+    private var expansionTasks: [String: Task<Void, Never>] = [:]
+
+    deinit {
+        publishTask?.cancel()
+        rootScanTask?.cancel()
+        expansionTasks.values.forEach { $0.cancel() }
+    }
 
     init(request: StorageViewerRequest) {
         self.request = request
@@ -80,8 +98,9 @@ final class StorageScanModel: ObservableObject {
         switch request {
         case let .scan(paths, currentDirectory):
             phase = .scanning(title: Self.title(for: paths))
-            Task {
+            rootScanTask = Task {
                 for await layer in LazyStorageScanner.rootSnapshots(paths: paths, currentDirectory: currentDirectory) {
+                    guard !Task.isCancelled else { break }
                     let report = cachedReport(from: Self.report(for: layer))
                     let pendingExpansions = layer.isComplete ? autoExpandCandidates(from: report.root).count : 0
                     publish(
@@ -102,13 +121,13 @@ final class StorageScanModel: ObservableObject {
 
         case let .report(url):
             phase = .scanning(title: url.lastPathComponent)
-            Task {
+            rootScanTask = Task {
                 do {
                     let report = try await Task.detached(priority: .userInitiated) {
                         let data = try Data(contentsOf: url)
                         return try JSONDecoder().decode(StorageAnalysisReport.self, from: data)
                     }.value
-                    phase = .displaying(Self.snapshot(for: report, currentPath: report.root.path))
+                    display(Self.snapshot(for: report, currentPath: report.root.path), immediately: true)
                 } catch {
                     phase = .failed("Could not open \(url.lastPathComponent): \(error.localizedDescription)")
                 }
@@ -123,6 +142,26 @@ final class StorageScanModel: ObservableObject {
         expand(node, automatic: false)
     }
 
+    func toggleBackgroundScanning() {
+        backgroundScanningPaused.toggle()
+        if backgroundScanningPaused {
+            refreshDisplayedProgress(currentPath: currentProgressPath, localIsComplete: false, immediately: true)
+        } else {
+            drainAutoExpandQueue()
+            refreshDisplayedProgress(currentPath: currentProgressPath, localIsComplete: loadingPaths.isEmpty, immediately: true)
+        }
+    }
+
+    func stopBackgroundScanning() {
+        backgroundScanningPaused = true
+        autoExpandQueue.removeAll()
+        queuedAutoExpandPaths.removeAll()
+        for path in automaticLoadingPaths {
+            expansionTasks[path]?.cancel()
+        }
+        refreshDisplayedProgress(currentPath: currentProgressPath, localIsComplete: loadingPaths.isEmpty, immediately: true)
+    }
+
     private func expand(_ node: StorageAnalysisNode, automatic: Bool) {
         guard !node.synthetic, node.folderCount > 0, !loadingPaths.contains(node.path) else { return }
         removeQueuedExpansion(for: node.path)
@@ -132,6 +171,11 @@ final class StorageScanModel: ObservableObject {
             drainAutoExpandQueue()
             return
         }
+
+        if !automatic {
+            backgroundScanningPaused = true
+        }
+
         if expandedPaths.contains(node.path) {
             drainAutoExpandQueue()
             return
@@ -139,14 +183,28 @@ final class StorageScanModel: ObservableObject {
 
         expandedPaths.insert(node.path)
         loadingPaths.insert(node.path)
-        refreshDisplayedProgress(currentPath: node.path, localIsComplete: false)
+        if automatic {
+            automaticLoadingPaths.insert(node.path)
+        }
+        refreshDisplayedProgress(currentPath: node.path, localIsComplete: false, immediately: true)
 
-        Task {
+        let task = Task {
+            defer {
+                loadingPaths.remove(node.path)
+                automaticLoadingPaths.remove(node.path)
+                expansionTasks.removeValue(forKey: node.path)
+                progressByPath.removeValue(forKey: node.path)
+                displayProgressNow()
+                refreshDisplayedProgress(currentPath: node.path, localIsComplete: loadingPaths.isEmpty)
+                drainAutoExpandQueue()
+            }
+
             for await scanSnapshot in LazyStorageScanner.childSnapshots(for: node) {
+                guard !Task.isCancelled else { break }
                 let expanded = scanSnapshot.node
-                expandedCache[node.path] = expanded
-                scanningProgress[node.path] = scanSnapshot
-                guard case let .displaying(snapshot) = phase else { continue }
+                storeExpandedNode(expanded)
+                progressByPath[node.path] = scanSnapshot
+                guard let snapshot = currentDisplaySnapshot else { continue }
                 var report = snapshot.report
                 if report.root.stableID == expanded.stableID {
                     report.root = expanded
@@ -162,19 +220,16 @@ final class StorageScanModel: ObservableObject {
                     localActiveBranches: scanSnapshot.activeBranches,
                     localIsComplete: scanSnapshot.isComplete
                 )
-                if automatic {
+                if automatic && scanSnapshot.isComplete {
                     scheduleAutoExpand(from: report.root)
                 }
             }
-            loadingPaths.remove(node.path)
-            scanningProgress.removeValue(forKey: node.path)
-            refreshDisplayedProgress(currentPath: node.path, localIsComplete: loadingPaths.isEmpty)
-            drainAutoExpandQueue()
         }
+        expansionTasks[node.path] = task
     }
 
     private func publishCachedNode(_ node: StorageAnalysisNode, currentPath: String) {
-        guard case let .displaying(snapshot) = phase else { return }
+        guard let snapshot = currentDisplaySnapshot else { return }
         var report = snapshot.report
         if report.root.stableID == node.stableID || report.root.path == node.path {
             report.root = node
@@ -187,14 +242,19 @@ final class StorageScanModel: ObservableObject {
             completedBranches: snapshot.progress.completedBranches,
             totalBranches: snapshot.progress.totalBranches,
             localActiveBranches: 0,
-            localIsComplete: loadingPaths.isEmpty
+            localIsComplete: loadingPaths.isEmpty,
+            immediate: true
         )
     }
 
     private func scheduleAutoExpand(from root: StorageAnalysisNode) {
+        guard !backgroundScanningPaused else { return }
+        guard automaticExpansionStarts < Self.maxAutomaticExpansionsPerSession else { return }
+
         var didEnqueue = false
         for node in autoExpandCandidates(from: root) where autoExpandQueue.count < Self.maxAutomaticExpansionBacklog {
             guard !queuedAutoExpandPaths.contains(node.path) else { continue }
+            guard automaticExpansionStarts + queuedAutoExpandPaths.count < Self.maxAutomaticExpansionsPerSession else { break }
             queuedAutoExpandPaths.insert(node.path)
             autoExpandQueue.append(node)
             didEnqueue = true
@@ -217,9 +277,15 @@ final class StorageScanModel: ObservableObject {
     }
 
     private func drainAutoExpandQueue() {
-        while loadingPaths.count < Self.maxConcurrentExpansions, !autoExpandQueue.isEmpty {
+        guard !backgroundScanningPaused else { return }
+        guard loadingPaths.subtracting(automaticLoadingPaths).isEmpty else { return }
+
+        while automaticLoadingPaths.count < Self.maxAutomaticConcurrentExpansions,
+              automaticExpansionStarts < Self.maxAutomaticExpansionsPerSession,
+              !autoExpandQueue.isEmpty {
             let node = autoExpandQueue.removeFirst()
             queuedAutoExpandPaths.remove(node.path)
+            automaticExpansionStarts += 1
             expand(node, automatic: true)
         }
     }
@@ -236,33 +302,111 @@ final class StorageScanModel: ObservableObject {
         totalBranches: Int? = nil,
         localActiveBranches: Int = 0,
         localIsComplete: Bool = true,
-        pendingBranches: Int = 0
+        pendingBranches: Int = 0,
+        immediate: Bool = false
     ) {
         let activeBranches = localActiveBranches + loadingPaths.count + queuedAutoExpandPaths.count + pendingBranches
         let report = cachedReport(from: report)
-        phase = .displaying(Self.snapshot(
+        let snapshot = Self.snapshot(
             for: report,
             currentPath: currentPath,
             completedBranches: completedBranches,
             totalBranches: totalBranches,
             activeBranches: activeBranches,
             isComplete: localIsComplete && activeBranches == 0
-        ))
+        )
+        display(snapshot, immediately: immediate || currentDisplaySnapshot == nil || snapshot.progress.isComplete)
     }
 
     private func refreshDisplayedProgress(
         currentPath: String,
-        localIsComplete: Bool = true
+        localIsComplete: Bool = true,
+        immediately: Bool = false
     ) {
-        guard case let .displaying(snapshot) = phase else { return }
+        guard let snapshot = currentDisplaySnapshot else { return }
         publish(
             report: snapshot.report,
             currentPath: currentPath,
             completedBranches: snapshot.progress.completedBranches,
             totalBranches: snapshot.progress.totalBranches,
             localActiveBranches: 0,
-            localIsComplete: localIsComplete
+            localIsComplete: localIsComplete,
+            immediate: immediately
         )
+    }
+
+    private var currentDisplaySnapshot: StorageScanSnapshot? {
+        if let pendingDisplaySnapshot {
+            return pendingDisplaySnapshot
+        }
+
+        guard case let .displaying(snapshot) = phase else { return nil }
+        return snapshot
+    }
+
+    private var currentProgressPath: String {
+        currentDisplaySnapshot?.progress.currentPath ?? ""
+    }
+
+    private func display(_ snapshot: StorageScanSnapshot, immediately: Bool) {
+        if immediately {
+            publishTask?.cancel()
+            publishTask = nil
+            pendingDisplaySnapshot = nil
+            scanningProgress = progressByPath
+            phase = .displaying(snapshot)
+            return
+        }
+
+        pendingDisplaySnapshot = snapshot
+        guard publishTask == nil else { return }
+
+        let delay = Self.uiPublishIntervalNanoseconds
+        publishTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled else { return }
+            self?.flushPendingDisplay()
+        }
+    }
+
+    private func flushPendingDisplay() {
+        publishTask = nil
+        guard let pendingDisplaySnapshot else { return }
+        self.pendingDisplaySnapshot = nil
+        scanningProgress = progressByPath
+        phase = .displaying(pendingDisplaySnapshot)
+    }
+
+    private func displayProgressNow() {
+        publishTask?.cancel()
+        publishTask = nil
+        if let pendingDisplaySnapshot {
+            self.pendingDisplaySnapshot = nil
+            scanningProgress = progressByPath
+            phase = .displaying(pendingDisplaySnapshot)
+        } else {
+            scanningProgress = progressByPath
+        }
+    }
+
+    private func storeExpandedNode(_ node: StorageAnalysisNode) {
+        expandedCache[node.path] = node
+        expandedCacheOrder.removeAll { $0 == node.path }
+        expandedCacheOrder.append(node.path)
+        trimExpandedCache()
+    }
+
+    private func trimExpandedCache() {
+        var attempts = expandedCacheOrder.count
+        while expandedCache.count > Self.maxExpandedCacheEntries, attempts > 0 {
+            attempts -= 1
+            let path = expandedCacheOrder.removeFirst()
+            if loadingPaths.contains(path) {
+                expandedCacheOrder.append(path)
+                continue
+            }
+            expandedCache.removeValue(forKey: path)
+        }
     }
 
     private func cachedReport(from report: StorageAnalysisReport) -> StorageAnalysisReport {

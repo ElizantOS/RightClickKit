@@ -2,7 +2,7 @@ import Foundation
 import RightClickKitCore
 
 enum LazyStorageScanner {
-    private static let concurrentDuLimit = 6
+    private static let concurrentDuLimit = 3
 
     static func rootSnapshots(paths: [String], currentDirectory: String) -> AsyncStream<StorageLayerSnapshot> {
         AsyncStream { continuation in
@@ -165,6 +165,11 @@ enum LazyStorageScanner {
 
             var completed = 0
             while running > 0, let updated = await group.next() {
+                if Task.isCancelled {
+                    group.cancelAll()
+                    break
+                }
+
                 running -= 1
                 completed += 1
                 root.replaceDirectChild(updated)
@@ -246,6 +251,11 @@ enum LazyStorageScanner {
                     }
 
                     while running > 0, let updated = await group.next() {
+                        if Task.isCancelled {
+                            group.cancelAll()
+                            break
+                        }
+
                         running -= 1
                         completed += 1
                         current.replaceDirectChild(updated)
@@ -478,9 +488,11 @@ enum LazyStorageScanner {
     }
 
     private static func duBytes(for url: URL) -> Int64? {
+        guard !Task.isCancelled else { return nil }
+
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/du")
-        process.arguments = ["-sk", url.path]
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/nice")
+        process.arguments = ["-n", "10", "/usr/bin/du", "-sk", url.path]
 
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -506,9 +518,11 @@ enum LazyStorageScanner {
     }
 
     private static func duDepthOneBytes(for directory: URL) -> [String: Int64] {
+        guard !Task.isCancelled else { return [:] }
+
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/du")
-        process.arguments = ["-k", "-d", "1", directory.path]
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/nice")
+        process.arguments = ["-n", "10", "/usr/bin/du", "-k", "-d", "1", directory.path]
 
         let pipe = Pipe()
         process.standardOutput = pipe

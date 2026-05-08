@@ -19,7 +19,10 @@ struct StorageViewerRootView: View {
                     loadingPaths: model.loadingPaths,
                     scanningProgress: model.scanningProgress,
                     expandedPaths: model.expandedPaths,
-                    onExpand: model.expand
+                    backgroundScanningPaused: model.backgroundScanningPaused,
+                    onExpand: model.expand,
+                    onToggleBackgroundScan: model.toggleBackgroundScanning,
+                    onStopBackgroundScan: model.stopBackgroundScanning
                 )
             case let .failed(message):
                 StorageViewerErrorView(message: message)
@@ -36,7 +39,10 @@ struct StorageViewerView: View {
     let loadingPaths: Set<String>
     let scanningProgress: [String: StorageNodeScanSnapshot]
     let expandedPaths: Set<String>
+    let backgroundScanningPaused: Bool
     var onExpand: (StorageAnalysisNode) -> Void
+    var onToggleBackgroundScan: () -> Void
+    var onStopBackgroundScan: () -> Void
     @State private var selectedPath: [String] = []
     @State private var detailPath: [String] = []
     @State private var previewPath: [String]?
@@ -81,9 +87,12 @@ struct StorageViewerView: View {
                     loadingPaths: loadingPaths,
                     scanningProgress: scanningProgress,
                     expandedPaths: expandedPaths,
+                    backgroundScanningPaused: backgroundScanningPaused,
                     onSelect: selectFromList,
                     onExpand: onExpand,
-                    onPreviewPath: previewFromList
+                    onPreviewPath: previewFromList,
+                    onToggleBackgroundScan: onToggleBackgroundScan,
+                    onStopBackgroundScan: onStopBackgroundScan
                 )
                 .frame(width: 370)
             }
@@ -213,9 +222,12 @@ private struct StorageInspectorView: View {
     let loadingPaths: Set<String>
     let scanningProgress: [String: StorageNodeScanSnapshot]
     let expandedPaths: Set<String>
+    let backgroundScanningPaused: Bool
     var onSelect: (StorageAnalysisNode) -> Void
     var onExpand: (StorageAnalysisNode) -> Void
     var onPreviewPath: (StorageAnalysisNode) -> Void
+    var onToggleBackgroundScan: () -> Void
+    var onStopBackgroundScan: () -> Void
 
     private var visibleChildren: [StorageAnalysisNode] {
         node.children
@@ -319,7 +331,12 @@ private struct StorageInspectorView: View {
                     .foregroundStyle(StoragePalette.blue)
             }
 
-            ScanProgressFooter(progress: progress)
+            ScanProgressFooter(
+                progress: progress,
+                backgroundScanningPaused: backgroundScanningPaused,
+                onToggleBackgroundScan: onToggleBackgroundScan,
+                onStopBackgroundScan: onStopBackgroundScan
+            )
         }
         .padding(20)
         .rckGlassSurface(
@@ -577,6 +594,13 @@ private struct ScanProgressBar: View {
 
 private struct ScanProgressFooter: View {
     let progress: StorageScanProgress
+    let backgroundScanningPaused: Bool
+    var onToggleBackgroundScan: () -> Void
+    var onStopBackgroundScan: () -> Void
+
+    private var canControlBackground: Bool {
+        !progress.isComplete
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -605,6 +629,31 @@ private struct ScanProgressFooter: View {
                     .foregroundStyle(StoragePalette.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
+            }
+
+            if canControlBackground {
+                HStack(spacing: 8) {
+                    Button {
+                        onToggleBackgroundScan()
+                    } label: {
+                        Label(
+                            backgroundScanningPaused ? "Resume Background" : "Pause Background",
+                            systemImage: backgroundScanningPaused ? "play.circle" : "pause.circle"
+                        )
+                    }
+                    .rckGlassButton()
+
+                    Button {
+                        onStopBackgroundScan()
+                    } label: {
+                        Label("Stop Background", systemImage: "stop.circle")
+                    }
+                    .rckGlassButton()
+
+                    Spacer(minLength: 0)
+                }
+                .controlSize(.small)
+                .padding(.top, 5)
             }
         }
         .padding(.top, 2)
