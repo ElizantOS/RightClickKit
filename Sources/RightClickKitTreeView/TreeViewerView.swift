@@ -55,7 +55,7 @@ struct TreeViewerView: View {
                     )
                     .frame(minWidth: 310, idealWidth: 360, maxWidth: 420)
 
-                    TreeMapPanel(root: root, selectedID: selectedID)
+                    TreeMapPanel(root: root, selectedID: $selectedID)
                         .frame(minWidth: 360, maxWidth: .infinity)
 
                     TreeInspectorPanel(
@@ -284,14 +284,22 @@ private struct TreeOutlineRow: View {
 
 private struct TreeMapPanel: View {
     let root: DirectoryTreeNode
-    let selectedID: String?
+    @Binding var selectedID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Structure Map", systemImage: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 15, weight: .semibold))
+            HStack {
+                Label("Structure Map", systemImage: "point.3.connected.trianglepath.dotted")
+                    .font(.system(size: 15, weight: .semibold))
 
-            TreeStructureCanvas(root: root, selectedID: selectedID)
+                Spacer()
+
+                Text("\(TreeFormatter.count(root.visibleNodeCount(limit: 1_200))) nodes")
+                    .font(.system(size: 12))
+                    .foregroundStyle(TreePalette.secondaryText)
+            }
+
+            TreeStructureCanvas(root: root, selectedID: $selectedID)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .frame(minHeight: 420)
         }
@@ -305,58 +313,131 @@ private struct TreeMapPanel: View {
 
 private struct TreeStructureCanvas: View {
     let root: DirectoryTreeNode
-    let selectedID: String?
+    @Binding var selectedID: String?
 
-    private var visibleNodes: [DirectoryTreeNode] {
-        Array(root.flattened().prefix(260))
+    private var layout: TreeMapLayout {
+        TreeMapLayout(root: root, limit: 1_200)
     }
 
     var body: some View {
-        Canvas(rendersAsynchronously: true) { context, size in
-            let nodes = visibleNodes
-            guard !nodes.isEmpty else { return }
+        ScrollView([.horizontal, .vertical]) {
+            ZStack(alignment: .topLeading) {
+                Canvas(rendersAsynchronously: true) { context, _ in
+                    for node in layout.nodes {
+                        guard let from = layout.positions[node.id] else { continue }
+                        for child in node.children {
+                            guard let to = layout.positions[child.id] else { continue }
+                            var path = Path()
+                            path.move(to: from)
+                            let midX = (from.x + to.x) / 2
+                            path.addCurve(
+                                to: to,
+                                control1: CGPoint(x: midX, y: from.y),
+                                control2: CGPoint(x: midX, y: to.y)
+                            )
+                            context.stroke(
+                                path,
+                                with: .color(TreePalette.depthColor(child.depth).opacity(0.34)),
+                                lineWidth: 1.15
+                            )
+                        }
+                    }
 
-            let maxDepth = max(nodes.map(\.depth).max() ?? 1, 1)
-            let rows = max(nodes.count, 1)
-            let xStep = max(42, size.width / CGFloat(maxDepth + 1))
-            let yStep = max(10, size.height / CGFloat(rows + 1))
-
-            var positions: [String: CGPoint] = [:]
-            for (index, node) in nodes.enumerated() {
-                positions[node.id] = CGPoint(
-                    x: CGFloat(node.depth) * xStep + 18,
-                    y: CGFloat(index + 1) * yStep
-                )
-            }
-
-            for node in nodes {
-                guard let from = positions[node.id] else { continue }
-                for child in node.children.prefix(18) {
-                    guard let to = positions[child.id] else { continue }
-                    var path = Path()
-                    path.move(to: from)
-                    let midX = (from.x + to.x) / 2
-                    path.addCurve(
-                        to: to,
-                        control1: CGPoint(x: midX, y: from.y),
-                        control2: CGPoint(x: midX, y: to.y)
-                    )
-                    context.stroke(path, with: .color(TreePalette.depthColor(child.depth).opacity(0.34)), lineWidth: 1)
+                    for node in layout.nodes {
+                        guard let point = layout.positions[node.id] else { continue }
+                        let selected = node.id == selectedID
+                        let radius: CGFloat = selected ? 5.8 : node.isDirectory ? 4.4 : 3.1
+                        let rect = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
+                        context.fill(Path(ellipseIn: rect), with: .color(TreePalette.depthColor(node.depth)))
+                        if selected {
+                            context.stroke(
+                                Path(ellipseIn: rect.insetBy(dx: -5, dy: -5)),
+                                with: .color(TreePalette.blue),
+                                lineWidth: 2
+                            )
+                        }
+                    }
                 }
-            }
+                .frame(width: layout.size.width, height: layout.size.height)
+                .drawingGroup()
 
-            for node in nodes {
-                guard let point = positions[node.id] else { continue }
-                let selected = node.id == selectedID
-                let radius: CGFloat = selected ? 5.5 : node.isDirectory ? 4.2 : 2.8
-                let rect = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
-                context.fill(Path(ellipseIn: rect), with: .color(TreePalette.depthColor(node.depth)))
-                if selected {
-                    context.stroke(Path(ellipseIn: rect.insetBy(dx: -4, dy: -4)), with: .color(TreePalette.blue), lineWidth: 2)
+                ForEach(layout.nodes) { node in
+                    if let point = layout.positions[node.id] {
+                        TreeMapNodeLabel(
+                            node: node,
+                            isSelected: node.id == selectedID,
+                            onSelect: {
+                                selectedID = node.id
+                            }
+                        )
+                        .frame(width: 138, alignment: .leading)
+                        .position(x: point.x + 78, y: point.y)
+                    }
                 }
             }
         }
-        .drawingGroup()
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct TreeMapNodeLabel: View {
+    let node: DirectoryTreeNode
+    let isSelected: Bool
+    var onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 5) {
+                Image(systemName: node.kind.iconName)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(TreePalette.depthColor(node.depth))
+                    .frame(width: 12)
+
+                Text(node.name)
+                    .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(isSelected ? TreePalette.blue.opacity(0.14) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct TreeMapLayout {
+    let nodes: [DirectoryTreeNode]
+    let positions: [String: CGPoint]
+    let size: CGSize
+
+    init(root: DirectoryTreeNode, limit: Int) {
+        let nodes = root.flattened(limit: limit)
+        self.nodes = nodes
+
+        let rowHeight: CGFloat = 28
+        let xStep: CGFloat = 185
+        let leftPadding: CGFloat = 28
+        let topPadding: CGFloat = 24
+        let maxDepth = max(nodes.map(\.depth).max() ?? 1, 1)
+
+        var positions: [String: CGPoint] = [:]
+        for (index, node) in nodes.enumerated() {
+            positions[node.id] = CGPoint(
+                x: leftPadding + CGFloat(node.depth) * xStep,
+                y: topPadding + CGFloat(index) * rowHeight
+            )
+        }
+
+        self.positions = positions
+        self.size = CGSize(
+            width: leftPadding + CGFloat(maxDepth + 1) * xStep + 170,
+            height: topPadding * 2 + CGFloat(max(nodes.count, 1)) * rowHeight
+        )
     }
 }
 
@@ -566,6 +647,26 @@ private struct TreeErrorView: View {
 private extension DirectoryTreeNode {
     func flattened() -> [DirectoryTreeNode] {
         [self] + children.flatMap { $0.flattened() }
+    }
+
+    func flattened(limit: Int) -> [DirectoryTreeNode] {
+        guard limit > 0 else { return [] }
+        var result: [DirectoryTreeNode] = []
+        appendFlattened(limit: limit, into: &result)
+        return result
+    }
+
+    func visibleNodeCount(limit: Int) -> Int {
+        flattened(limit: limit).count
+    }
+
+    private func appendFlattened(limit: Int, into result: inout [DirectoryTreeNode]) {
+        guard result.count < limit else { return }
+        result.append(self)
+        for child in children {
+            guard result.count < limit else { return }
+            child.appendFlattened(limit: limit, into: &result)
+        }
     }
 
     func find(id: String?) -> DirectoryTreeNode? {
