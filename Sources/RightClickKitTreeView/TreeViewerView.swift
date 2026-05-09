@@ -185,6 +185,10 @@ private struct TreeOutlinePanel: View {
     let loadingNodeIDs: Set<String>
     var onExpand: (DirectoryTreeNode) -> Void
 
+    private var visibleRows: [TreeOutlineVisibleRow] {
+        TreeOutlineVisibleRow.rows(root: root, expandedIDs: expandedIDs)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Directory Tree", systemImage: "sidebar.left")
@@ -192,13 +196,15 @@ private struct TreeOutlinePanel: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    TreeOutlineRow(
-                        node: root,
-                        selectedID: $selectedID,
-                        expandedIDs: $expandedIDs,
-                        loadingNodeIDs: loadingNodeIDs,
-                        onExpand: onExpand
-                    )
+                    ForEach(visibleRows) { row in
+                        TreeOutlineRow(
+                            node: row.node,
+                            selectedID: $selectedID,
+                            expandedIDs: $expandedIDs,
+                            loadingNodeIDs: loadingNodeIDs,
+                            onExpand: onExpand
+                        )
+                    }
                 }
                 .padding(.trailing, 8)
             }
@@ -208,6 +214,30 @@ private struct TreeOutlinePanel: View {
             in: RoundedRectangle(cornerRadius: 8, style: .continuous),
             interactive: true
         )
+    }
+}
+
+private struct TreeOutlineVisibleRow: Identifiable {
+    let id: String
+    let node: DirectoryTreeNode
+
+    static func rows(root: DirectoryTreeNode, expandedIDs: Set<String>) -> [TreeOutlineVisibleRow] {
+        var rows: [TreeOutlineVisibleRow] = []
+        rows.reserveCapacity(512)
+        append(root, expandedIDs: expandedIDs, rows: &rows)
+        return rows
+    }
+
+    private static func append(
+        _ node: DirectoryTreeNode,
+        expandedIDs: Set<String>,
+        rows: inout [TreeOutlineVisibleRow]
+    ) {
+        rows.append(TreeOutlineVisibleRow(id: node.id, node: node))
+        guard expandedIDs.contains(node.id) else { return }
+        for child in node.children {
+            append(child, expandedIDs: expandedIDs, rows: &rows)
+        }
     }
 }
 
@@ -278,18 +308,6 @@ private struct TreeOutlineRow: View {
                 )
             }
             .buttonStyle(.plain)
-
-            if isExpanded {
-                ForEach(node.children) { child in
-                    TreeOutlineRow(
-                        node: child,
-                        selectedID: $selectedID,
-                        expandedIDs: $expandedIDs,
-                        loadingNodeIDs: loadingNodeIDs,
-                        onExpand: onExpand
-                    )
-                }
-            }
         }
     }
 
