@@ -159,6 +159,7 @@ private final class DirectoryScanner: @unchecked Sendable {
         }
 
         if meta.isPackage, !options.includePackages {
+            let packageMeta = metadata(url, includeChildCount: true)
             let node = DirectoryTreeNode(
                 id: stableID(url, depth: depth),
                 name: displayName(url, meta: meta),
@@ -166,7 +167,7 @@ private final class DirectoryScanner: @unchecked Sendable {
                 kind: .directory,
                 depth: depth,
                 children: [],
-                childCount: meta.childCount,
+                childCount: packageMeta.childCount,
                 fileCount: 0,
                 folderCount: 1,
                 maxDepth: depth,
@@ -179,26 +180,34 @@ private final class DirectoryScanner: @unchecked Sendable {
             return node
         }
 
+        let candidates = childURLs(of: url).filter { options.includeHidden || !isHidden($0) }
+        let childDepth = depth + 1
+        let visibleLimit = max(0, options.maxEntries - scannedEntries)
+        let visibleCandidates = Array(candidates.prefix(visibleLimit))
+        var children = visibleCandidates.map { placeholderNode(for: $0, depth: childDepth) }
+
+        if candidates.count > visibleCandidates.count {
+            truncated = true
+            children.append(omittedNode(
+                parent: url,
+                depth: childDepth,
+                remainingCount: candidates.count - visibleCandidates.count
+            ))
+        }
+
         var partial = directoryNode(
             for: url,
             depth: depth,
             meta: meta,
-            children: [],
-            isTruncated: false
+            children: children,
+            isTruncated: truncated
         )
         recordProgress(partial, currentPath: url.path, continuation: continuation, force: true)
 
-        var children: [DirectoryTreeNode] = []
-        let candidates = childURLs(of: url).filter { options.includeHidden || !isHidden($0) }
-        for (index, child) in candidates.enumerated() {
+        for child in visibleCandidates {
             guard !Task.isCancelled else { break }
             guard scannedEntries < options.maxEntries else {
                 truncated = true
-                children.append(omittedNode(
-                    parent: url,
-                    depth: depth + 1,
-                    remainingCount: candidates.count - index
-                ))
                 partial = directoryNode(
                     for: url,
                     depth: depth,
@@ -210,21 +219,11 @@ private final class DirectoryScanner: @unchecked Sendable {
                 break
             }
 
-            let placeholder = placeholderNode(for: child, depth: depth + 1)
-            children.append(placeholder)
-            partial = directoryNode(
-                for: url,
-                depth: depth,
-                meta: meta,
-                children: children,
-                isTruncated: truncated
-            )
-            recordProgress(partial, currentPath: child.path, continuation: continuation)
-
-            let scannedChild = await scanNode(child, depth: depth + 1, continuation: continuation)
+            let placeholderID = stableID(child, depth: childDepth)
+            let scannedChild = await scanNode(child, depth: childDepth, continuation: continuation)
             if scannedChild.kind == .missing {
-                children.removeAll { $0.id == placeholder.id }
-            } else if let index = children.firstIndex(where: { $0.id == placeholder.id }) {
+                children.removeAll { $0.id == placeholderID }
+            } else if let index = children.firstIndex(where: { $0.id == placeholderID }) {
                 children[index] = scannedChild
             } else {
                 children.append(scannedChild)
@@ -401,7 +400,7 @@ private final class DirectoryScanner: @unchecked Sendable {
         }.map(\.url)
     }
 
-    private func metadata(_ url: URL, includeChildCount: Bool = true) -> TreeMetadata {
+    private func metadata(_ url: URL, includeChildCount: Bool = false) -> TreeMetadata {
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
         let values = try? url.resourceValues(forKeys: Self.resourceKeys)
