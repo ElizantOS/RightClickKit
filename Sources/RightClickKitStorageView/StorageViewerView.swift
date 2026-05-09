@@ -66,7 +66,12 @@ struct StorageViewerView: View {
         RCKGlassGroup(spacing: 14) {
             HStack(spacing: 26) {
                 VStack(alignment: .leading, spacing: 18) {
-                    HeaderView(report: report, progress: snapshot.progress, selectedNode: selectedNode)
+                    HeaderView(
+                        report: report,
+                        progress: snapshot.progress,
+                        selectedNode: selectedNode,
+                        backgroundScanningPaused: backgroundScanningPaused
+                    )
 
                     SunburstChartView(
                         root: report.root,
@@ -182,6 +187,7 @@ private struct HeaderView: View {
     let report: StorageAnalysisReport
     let progress: StorageScanProgress
     let selectedNode: StorageAnalysisNode
+    let backgroundScanningPaused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -197,7 +203,10 @@ private struct HeaderView: View {
 
                 Spacer(minLength: 18)
 
-                BackgroundScanBadge(progress: progress)
+                BackgroundScanBadge(
+                    progress: progress,
+                    backgroundScanningPaused: backgroundScanningPaused
+                )
 
                 Text(StorageFormatter.bytes(selectedNode.bytes))
                     .font(.system(size: 22, weight: .medium))
@@ -218,18 +227,19 @@ private struct HeaderView: View {
 
 private struct BackgroundScanBadge: View {
     let progress: StorageScanProgress
-    @State private var rotation = 0.0
+    let backgroundScanningPaused: Bool
 
     private var isActive: Bool {
-        !progress.isComplete && progress.activeBranches > 0
+        !progress.isComplete && !backgroundScanningPaused && progress.activeBranches > 0
     }
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: progress.isComplete ? "checkmark.circle" : "arrow.triangle.2.circlepath")
-                .font(.system(size: 12, weight: .semibold))
-                .symbolRenderingMode(.monochrome)
-                .rotationEffect(.degrees(isActive ? rotation : 0))
+            ScanActivityIcon(
+                isActive: isActive,
+                staticSystemImage: staticIcon,
+                size: 12
+            )
 
             Text(label)
                 .font(.system(size: 11, weight: .semibold))
@@ -239,18 +249,22 @@ private struct BackgroundScanBadge: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
         .rckGlassSurface(in: Capsule(), interactive: false)
-        .onAppear {
-            updateAnimation()
-        }
-        .onChange(of: isActive) { _, _ in
-            updateAnimation()
-        }
         .accessibilityLabel(label)
+    }
+
+    private var staticIcon: String {
+        if progress.isComplete { return "checkmark.circle" }
+        if backgroundScanningPaused { return "pause.circle" }
+        return "clock"
     }
 
     private var label: String {
         if progress.isComplete {
             return "Complete"
+        }
+
+        if backgroundScanningPaused {
+            return "Paused"
         }
 
         let queued = progress.queuedBranches
@@ -259,17 +273,6 @@ private struct BackgroundScanBadge: View {
         }
 
         return "\(progress.activeBranches) active"
-    }
-
-    private func updateAnimation() {
-        guard isActive else {
-            rotation = 0
-            return
-        }
-
-        withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: false)) {
-            rotation = 360
-        }
     }
 }
 
@@ -727,7 +730,6 @@ private struct ScanProgressFooter: View {
 private struct BackgroundScanStatusRow: View {
     let progress: StorageScanProgress
     let backgroundScanningPaused: Bool
-    @State private var rotation = 0.0
 
     private var isActive: Bool {
         !progress.isComplete && !backgroundScanningPaused && progress.activeBranches > 0
@@ -735,10 +737,12 @@ private struct BackgroundScanStatusRow: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
-                .rotationEffect(.degrees(isActive ? rotation : 0))
-                .frame(width: 16, height: 16)
+            ScanActivityIcon(
+                isActive: isActive,
+                staticSystemImage: icon,
+                size: 14
+            )
+            .frame(width: 16, height: 16)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -757,12 +761,6 @@ private struct BackgroundScanStatusRow: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .rckGlassSurface(in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .onAppear {
-            updateAnimation()
-        }
-        .onChange(of: isActive) { _, _ in
-            updateAnimation()
-        }
     }
 
     private var icon: String {
@@ -787,16 +785,28 @@ private struct BackgroundScanStatusRow: View {
             : ""
         return "\(progress.activeBranches) active\(queuedText)"
     }
+}
 
-    private func updateAnimation() {
-        guard isActive else {
-            rotation = 0
-            return
-        }
+private struct ScanActivityIcon: View {
+    let isActive: Bool
+    let staticSystemImage: String
+    let size: CGFloat
 
-        withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: false)) {
-            rotation = 360
+    var body: some View {
+        if isActive {
+            TimelineView(.animation) { timeline in
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: size, weight: .semibold))
+                    .rotationEffect(.degrees(rotation(for: timeline.date)))
+            }
+        } else {
+            Image(systemName: staticSystemImage)
+                .font(.system(size: size, weight: .semibold))
         }
+    }
+
+    private func rotation(for date: Date) -> Double {
+        date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.0) * 360
     }
 }
 

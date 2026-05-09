@@ -197,17 +197,28 @@ private struct SunburstSegment: Identifiable {
 }
 
 private enum SunburstLayout {
-    private static let maxDepth = 3
-    private static let maxSegments = 180
+    private static let maxReadableDepth = 8
+    private static let maxSegments = 320
     private static let maxChildrenPerNode = 28
+    private static let innerRadius: CGFloat = 0.30
+    private static let outerRadius: CGFloat = 0.96
+    private static let minimumRingWidth: CGFloat = 0.052
 
     static func segments(for root: StorageAnalysisNode) -> [SunburstSegment] {
         var output: [SunburstSegment] = []
+        let visibleDepth = max(1, min(maxReadableDepth, scannedDepth(of: root)))
+        let ringWidth = max(
+            minimumRingWidth,
+            (outerRadius - innerRadius) / CGFloat(visibleDepth)
+        )
+
         appendChildren(
             of: root,
             start: -.pi / 2,
             end: .pi * 1.5,
             depth: 1,
+            maxDepth: visibleDepth,
+            ringWidth: ringWidth,
             rootIndex: 0,
             output: &output
         )
@@ -219,6 +230,8 @@ private enum SunburstLayout {
         start: Double,
         end: Double,
         depth: Int,
+        maxDepth: Int,
+        ringWidth: CGFloat,
         rootIndex: Int,
         output: inout [SunburstSegment]
     ) {
@@ -228,7 +241,6 @@ private enum SunburstLayout {
         guard !children.isEmpty else { return }
 
         let total = max(children.reduce(Int64(0)) { $0 + $1.bytes }, 1)
-        let ringWidth = 0.64 / CGFloat(maxDepth)
         var cursor = start
 
         for (index, child) in children.enumerated() where output.count < maxSegments {
@@ -237,8 +249,8 @@ private enum SunburstLayout {
 
             let childEnd = cursor + span
             let paletteIndex = depth == 1 ? index : rootIndex
-            let inner = 0.32 + ringWidth * CGFloat(depth - 1)
-            let outer = inner + ringWidth * 0.93
+            let inner = innerRadius + ringWidth * CGFloat(depth - 1)
+            let outer = min(outerRadius, inner + ringWidth * 0.92)
 
             output.append(
                 SunburstSegment(
@@ -263,11 +275,24 @@ private enum SunburstLayout {
                 start: cursor,
                 end: childEnd,
                 depth: depth + 1,
+                maxDepth: maxDepth,
+                ringWidth: ringWidth,
                 rootIndex: paletteIndex,
                 output: &output
             )
             cursor = childEnd
         }
+    }
+
+    private static func scannedDepth(of node: StorageAnalysisNode) -> Int {
+        let childrenWithScannedDescendants = visibleChildren(of: node)
+            .filter { !$0.children.isEmpty }
+
+        guard !childrenWithScannedDescendants.isEmpty else {
+            return node.children.isEmpty ? 0 : 1
+        }
+
+        return 1 + (childrenWithScannedDescendants.map(scannedDepth).max() ?? 0)
     }
 
     private static func visibleChildren(of node: StorageAnalysisNode) -> [StorageAnalysisNode] {

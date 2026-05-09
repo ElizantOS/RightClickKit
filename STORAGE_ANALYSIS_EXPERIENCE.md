@@ -186,6 +186,31 @@
 
 经验：节流不是隐藏进度。只要后台任务仍在运行，就必须有持续、低成本、易扫读的 activity indicator。尤其是 macOS 工具窗口，用户需要一眼知道“还在工作、暂停了、还是已经完成”。
 
+### 12. 玫瑰图应该随扫描结果继续生长
+
+问题：玫瑰图固定只展示 3 层时，后台已经扫出更深目录也不会在图上长出来，用户会觉得递归扫描没有价值。
+
+解决：
+
+- 移除固定 `maxDepth = 3`。
+- 根据当前已经有 `children` 的可视树动态计算图表深度。
+- 扫到更深后代时，外圈自动长出新 ring。
+- 保留可读性保护：最多 8 个可读层、最多 320 个 segment、每个节点限制可见 children 数量。
+
+经验：存储分析图应该展示“已经知道的结构”，而不是展示“预设层数”。但真正无限层会让 ring 过薄、命中困难、绘制变慢，所以要做“随扫描生长 + 可读上限”，而不是完全无上限。
+
+### 13. Complete 状态不能继续播放扫描动画
+
+问题：状态已经显示 `Complete`，但旋转图标仍然看起来在转，会让用户以为后台还没停。
+
+解决：
+
+- Running 状态才创建旋转 activity icon。
+- Complete / Paused 改为静态图标。
+- 用 `TimelineView(.animation)` 驱动 running 图标旋转，状态切换时直接替换成静态分支，避免 `repeatForever` 动画残留。
+
+经验：状态视觉必须和状态文本一致。只要文本是 Complete，就不能出现任何“还在忙”的动画；否则用户会不信任进度系统。
+
 ## 当前架构要点
 
 - `rck` CLI 负责安装服务、生成目录树、启动存储分析 viewer。
@@ -230,6 +255,8 @@ swift build --disable-sandbox --disable-build-manifest-caching --cache-path .bui
 4. detail 里的只读派生内容不要用 `@State` 缓存。
 5. 扫描结果和 SwiftUI 发布要解耦，用心跳节奏合并刷新。
 6. 后台任务节流后仍要有明确 activity indicator。
-7. 原生 macOS App 要尊重系统窗口、toolbar、material 和 AppKit 能力。
+7. 玫瑰图随已扫描结构生长，但必须保留可读性上限。
+8. Complete 状态必须是静态完成视觉，不能继续播放 busy 动画。
+9. 原生 macOS App 要尊重系统窗口、toolbar、material 和 AppKit 能力。
 
 把这些事守住，RightClickKit 的存储分析就会从“能用”走向“真的顺手”。
