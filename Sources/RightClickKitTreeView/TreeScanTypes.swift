@@ -23,7 +23,7 @@ struct DirectoryTreeNode: Identifiable, Equatable, Sendable {
     var kind: TreeItemKind
     var depth: Int
     var children: [DirectoryTreeNode]
-    var childCount: Int
+    var childCount: Int?
     var fileCount: Int
     var folderCount: Int
     var maxDepth: Int

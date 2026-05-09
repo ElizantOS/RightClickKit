@@ -13,12 +13,14 @@ final class TreeScanModel: ObservableObject {
     @Published private(set) var treeText = TreeTextSnapshot.loading("Preparing tree output")
     @Published private(set) var loadingNodeIDs: Set<String> = []
     @Published var options = TreeScanOptions()
-    @Published var query = ""
+    @Published var searchText = ""
+    @Published private(set) var query = ""
 
     private let request: TreeViewerRequest
     private var didStart = false
     private var scanTask: Task<Void, Never>?
     private var treeTextTask: Task<Void, Never>?
+    private var searchTask: Task<Void, Never>?
     private var childLoadTasks: [String: Task<Void, Never>] = [:]
 
     init(request: TreeViewerRequest) {
@@ -34,6 +36,7 @@ final class TreeScanModel: ObservableObject {
     deinit {
         scanTask?.cancel()
         treeTextTask?.cancel()
+        searchTask?.cancel()
         childLoadTasks.values.forEach { $0.cancel() }
     }
 
@@ -76,6 +79,21 @@ final class TreeScanModel: ObservableObject {
             reloadTreeText(paths: paths, currentDirectory: currentDirectory, options: options)
         case .invalid:
             break
+        }
+    }
+
+    func scheduleSearch() {
+        searchTask?.cancel()
+        let value = searchText
+        if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            query = ""
+            return
+        }
+
+        searchTask = Task {
+            try? await Task.sleep(for: .milliseconds(220))
+            guard !Task.isCancelled else { return }
+            query = value
         }
     }
 

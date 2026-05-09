@@ -40,14 +40,15 @@ private final class DirectoryChildLoader: @unchecked Sendable {
 
     func loadChildren(for node: DirectoryTreeNode) -> DirectoryTreeNode {
         let url = URL(fileURLWithPath: node.path)
-        let meta = metadata(url, includeChildCount: true)
+        let meta = metadata(url)
         guard meta.exists, meta.isDirectory, !meta.isSymbolicLink else {
             return node
         }
 
         if meta.isPackage, !options.includePackages {
+            let packageMeta = metadata(url, includeChildCount: true)
             var replacement = node
-            replacement.childCount = meta.childCount
+            replacement.childCount = packageMeta.childCount
             replacement.modifiedAt = meta.modifiedAt
             replacement.isPackage = true
             return replacement
@@ -72,7 +73,7 @@ private final class DirectoryChildLoader: @unchecked Sendable {
     }
 
     private func childNode(for url: URL, depth: Int) -> DirectoryTreeNode {
-        let meta = metadata(url, includeChildCount: true)
+        let meta = metadata(url)
 
         let kind: TreeItemKind
         if !meta.exists {
@@ -92,7 +93,7 @@ private final class DirectoryChildLoader: @unchecked Sendable {
             kind: kind,
             depth: depth,
             children: [],
-            childCount: kind == .directory ? meta.childCount : 0,
+            childCount: kind == .directory ? nil : 0,
             fileCount: kind == .file || kind == .symlink ? 1 : 0,
             folderCount: kind == .directory ? 1 : 0,
             maxDepth: depth,
@@ -123,11 +124,11 @@ private final class DirectoryChildLoader: @unchecked Sendable {
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
         let values = try? url.resourceValues(forKeys: Self.resourceKeys)
-        let childCount: Int
+        let childCount: Int?
         if includeChildCount, isDirectory.boolValue {
-            childCount = (try? FileManager.default.contentsOfDirectory(atPath: url.path).count) ?? 0
+            childCount = (try? FileManager.default.contentsOfDirectory(atPath: url.path).count)
         } else {
-            childCount = 0
+            childCount = nil
         }
 
         return TreeMetadata(
@@ -287,7 +288,7 @@ private final class DirectoryScanner: @unchecked Sendable {
                 kind: kind,
                 depth: depth,
                 children: [],
-                childCount: 0,
+                childCount: kind == .directory ? nil : 0,
                 fileCount: kind == .file || kind == .symlink ? 1 : 0,
                 folderCount: kind == .directory ? 1 : 0,
                 maxDepth: depth,
@@ -515,7 +516,7 @@ private final class DirectoryScanner: @unchecked Sendable {
             kind: kind,
             depth: depth,
             children: [],
-            childCount: meta.childCount,
+            childCount: kind == .directory ? meta.childCount : 0,
             fileCount: kind == .file || kind == .symlink ? 1 : 0,
             folderCount: kind == .directory ? 1 : 0,
             maxDepth: depth,
@@ -546,11 +547,11 @@ private final class DirectoryScanner: @unchecked Sendable {
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
         let values = try? url.resourceValues(forKeys: Self.resourceKeys)
-        let childCount: Int
+        let childCount: Int?
         if includeChildCount, isDirectory.boolValue {
-            childCount = (try? FileManager.default.contentsOfDirectory(atPath: url.path).count) ?? 0
+            childCount = (try? FileManager.default.contentsOfDirectory(atPath: url.path).count)
         } else {
-            childCount = 0
+            childCount = nil
         }
 
         return TreeMetadata(
@@ -611,7 +612,7 @@ private struct TreeMetadata: Sendable {
     var isSymbolicLink: Bool
     var isPackage: Bool
     var modifiedAt: Date?
-    var childCount: Int
+    var childCount: Int?
 }
 
 private struct TreeDirectoryEntry: Sendable {

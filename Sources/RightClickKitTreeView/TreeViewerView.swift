@@ -114,9 +114,12 @@ private struct TreeHeaderView: View {
             }
 
             HStack(spacing: 12) {
-                TextField("Search files and folders", text: $model.query)
+                TextField("Search files and folders", text: $model.searchText)
                     .textFieldStyle(.roundedBorder)
                     .frame(minWidth: 260)
+                    .onChange(of: model.searchText) { _, _ in
+                        model.scheduleSearch()
+                    }
 
                 Toggle("Hidden", isOn: $model.options.includeHidden)
                     .toggleStyle(.checkbox)
@@ -126,8 +129,13 @@ private struct TreeHeaderView: View {
                     .toggleStyle(.checkbox)
                     .onChange(of: model.options.includePackages) { _, _ in model.rescan() }
 
-                Stepper("Outline \(model.options.maxDepth)", value: $model.options.maxDepth, in: 1...10)
-                    .onChange(of: model.options.maxDepth) { _, _ in model.rescan() }
+                TreeCompactStepper(
+                    title: "Outline",
+                    value: $model.options.maxDepth,
+                    range: 1...10
+                ) {
+                    model.rescan()
+                }
 
                 Spacer()
 
@@ -140,6 +148,51 @@ private struct TreeHeaderView: View {
             }
             .controlSize(.small)
         }
+    }
+}
+
+private struct TreeCompactStepper: View {
+    let title: String
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+    var onChange: () -> Void
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Text("\(title) \(value)")
+                .font(.system(size: 12))
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
+
+            Stepper("", value: $value, in: range)
+                .labelsHidden()
+                .fixedSize()
+        }
+        .controlSize(.small)
+        .fixedSize(horizontal: true, vertical: false)
+        .onChange(of: value) { _, _ in
+            onChange()
+        }
+    }
+}
+
+private struct TreePanelTitle: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+            Text(title)
+                .font(.system(size: 15, weight: .semibold))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .layoutPriority(2)
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -185,29 +238,19 @@ private struct TreeOutlinePanel: View {
     let loadingNodeIDs: Set<String>
     var onExpand: (DirectoryTreeNode) -> Void
 
-    private var visibleRows: [TreeOutlineVisibleRow] {
-        TreeOutlineVisibleRow.rows(root: root, expandedIDs: expandedIDs)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Directory Tree", systemImage: "sidebar.left")
                 .font(.system(size: 15, weight: .semibold))
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(visibleRows) { row in
-                        TreeOutlineRow(
-                            node: row.node,
-                            selectedID: $selectedID,
-                            expandedIDs: $expandedIDs,
-                            loadingNodeIDs: loadingNodeIDs,
-                            onExpand: onExpand
-                        )
-                    }
-                }
-                .padding(.trailing, 8)
-            }
+            TreeOutlineView(
+                root: root,
+                selectedID: $selectedID,
+                expandedIDs: $expandedIDs,
+                loadingNodeIDs: loadingNodeIDs,
+                onExpand: onExpand
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(16)
         .rckGlassSurface(
@@ -217,109 +260,363 @@ private struct TreeOutlinePanel: View {
     }
 }
 
-private struct TreeOutlineVisibleRow: Identifiable {
-    let id: String
-    let node: DirectoryTreeNode
-
-    static func rows(root: DirectoryTreeNode, expandedIDs: Set<String>) -> [TreeOutlineVisibleRow] {
-        var rows: [TreeOutlineVisibleRow] = []
-        rows.reserveCapacity(512)
-        append(root, expandedIDs: expandedIDs, rows: &rows)
-        return rows
-    }
-
-    private static func append(
-        _ node: DirectoryTreeNode,
-        expandedIDs: Set<String>,
-        rows: inout [TreeOutlineVisibleRow]
-    ) {
-        rows.append(TreeOutlineVisibleRow(id: node.id, node: node))
-        guard expandedIDs.contains(node.id) else { return }
-        for child in node.children {
-            append(child, expandedIDs: expandedIDs, rows: &rows)
-        }
-    }
-}
-
-private struct TreeOutlineRow: View {
-    let node: DirectoryTreeNode
+private struct TreeOutlineView: NSViewRepresentable {
+    let root: DirectoryTreeNode
     @Binding var selectedID: String?
     @Binding var expandedIDs: Set<String>
     let loadingNodeIDs: Set<String>
     var onExpand: (DirectoryTreeNode) -> Void
 
-    private var isExpanded: Bool {
-        expandedIDs.contains(node.id)
+    init(
+        root: DirectoryTreeNode,
+        selectedID: Binding<String?>,
+        expandedIDs: Binding<Set<String>>,
+        loadingNodeIDs: Set<String>,
+        onExpand: @escaping (DirectoryTreeNode) -> Void
+    ) {
+        self.root = root
+        self._selectedID = selectedID
+        self._expandedIDs = expandedIDs
+        self.loadingNodeIDs = loadingNodeIDs
+        self.onExpand = onExpand
     }
 
-    private var isSelected: Bool {
-        selectedID == node.id
+    func makeCoordinator() -> Coordinator {
+        Coordinator(selectedID: $selectedID, expandedIDs: $expandedIDs, onExpand: onExpand)
     }
 
-    private var isLoading: Bool {
-        loadingNodeIDs.contains(node.id)
+    func makeNSView(context: Context) -> NSScrollView {
+        let outlineView = NSOutlineView()
+        outlineView.headerView = nil
+        outlineView.rowHeight = 26
+        outlineView.intercellSpacing = NSSize(width: 0, height: 2)
+        outlineView.indentationPerLevel = 14
+        outlineView.usesAlternatingRowBackgroundColors = false
+        outlineView.allowsMultipleSelection = false
+        outlineView.allowsEmptySelection = false
+        outlineView.floatsGroupRows = false
+        outlineView.backgroundColor = .clear
+        outlineView.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
+
+        let column = NSTableColumn(identifier: .treeOutlineColumn)
+        column.resizingMask = .autoresizingMask
+        column.minWidth = 220
+        column.width = 340
+        outlineView.addTableColumn(column)
+        outlineView.outlineTableColumn = column
+
+        outlineView.delegate = context.coordinator
+        outlineView.dataSource = context.coordinator
+        context.coordinator.outlineView = outlineView
+
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.documentView = outlineView
+        return scrollView
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Button {
-                selectedID = node.id
-                if node.isDirectory {
-                    toggleExpanded()
-                }
-            } label: {
-                HStack(spacing: 7) {
-                    if isLoading {
-                        ProgressView()
-                            .controlSize(.mini)
-                            .frame(width: 12)
-                    } else {
-                        Image(systemName: node.isDirectory && isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(node.isDirectory ? TreePalette.secondaryText : .clear)
-                            .frame(width: 12)
-                    }
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let outlineView = scrollView.documentView as? NSOutlineView else { return }
+        context.coordinator.update(
+            root: root,
+            selectedID: selectedID,
+            expandedIDs: expandedIDs,
+            loadingNodeIDs: loadingNodeIDs,
+            outlineView: outlineView
+        )
+    }
 
-                    Image(systemName: node.kind.iconName)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(TreePalette.depthColor(node.depth))
-                        .frame(width: 16)
+    @MainActor
+    final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
+        private var rootItem: TreeOutlineItem?
+        private var itemsByID: [String: TreeOutlineItem] = [:]
+        private var lastRoot: DirectoryTreeNode?
+        private var loadingNodeIDs: Set<String> = []
+        private var selectedID: Binding<String?>
+        private var expandedIDs: Binding<Set<String>>
+        private let onExpand: (DirectoryTreeNode) -> Void
+        private var isRestoringExpansion = false
+        private var isRestoringSelection = false
+        weak var outlineView: NSOutlineView?
 
-                    Text(node.name)
-                        .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+        init(
+            selectedID: Binding<String?>,
+            expandedIDs: Binding<Set<String>>,
+            onExpand: @escaping (DirectoryTreeNode) -> Void
+        ) {
+            self.selectedID = selectedID
+            self.expandedIDs = expandedIDs
+            self.onExpand = onExpand
+        }
 
-                    Spacer(minLength: 8)
+        func update(
+            root: DirectoryTreeNode,
+            selectedID: String?,
+            expandedIDs: Set<String>,
+            loadingNodeIDs: Set<String>,
+            outlineView: NSOutlineView
+        ) {
+            if root != lastRoot {
+                let previousExpanded = currentExpandedIDs(in: outlineView)
+                self.rootItem = TreeOutlineItem(node: root)
+                self.itemsByID = rootItem?.indexedByID() ?? [:]
+                self.lastRoot = root
+                self.loadingNodeIDs = loadingNodeIDs
 
-                    if node.isDirectory {
-                        Text(TreeFormatter.count(node.childCount))
-                            .font(.system(size: 11))
-                            .foregroundStyle(TreePalette.secondaryText)
-                            .monospacedDigit()
-                    }
-                }
-                .padding(.leading, CGFloat(node.depth) * 14)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(isSelected ? TreePalette.blue.opacity(0.16) : Color.clear)
-                )
+                let effectiveExpanded = expandedIDs.union(previousExpanded)
+                outlineView.reloadData()
+                restoreExpanded(effectiveExpanded, in: outlineView)
+            } else if loadingNodeIDs != self.loadingNodeIDs {
+                let changedIDs = loadingNodeIDs.symmetricDifference(self.loadingNodeIDs)
+                self.loadingNodeIDs = loadingNodeIDs
+                reloadRows(withIDs: changedIDs, in: outlineView)
             }
-            .buttonStyle(.plain)
+
+            restoreSelection(selectedID ?? root.id, in: outlineView)
+        }
+
+        func outlineView(
+            _ outlineView: NSOutlineView,
+            numberOfChildrenOfItem item: Any?
+        ) -> Int {
+            guard let item = item as? TreeOutlineItem else {
+                return rootItem == nil ? 0 : 1
+            }
+            return item.children.count
+        }
+
+        func outlineView(
+            _ outlineView: NSOutlineView,
+            child index: Int,
+            ofItem item: Any?
+        ) -> Any {
+            guard let item = item as? TreeOutlineItem else {
+                return rootItem as Any
+            }
+            return item.children[index]
+        }
+
+        func outlineView(
+            _ outlineView: NSOutlineView,
+            isItemExpandable item: Any
+        ) -> Bool {
+            guard let item = item as? TreeOutlineItem else { return false }
+            return item.node.isDirectory && !item.node.isTruncated
+        }
+
+        func outlineView(
+            _ outlineView: NSOutlineView,
+            viewFor tableColumn: NSTableColumn?,
+            item: Any
+        ) -> NSView? {
+            guard let item = item as? TreeOutlineItem else { return nil }
+            let identifier = NSUserInterfaceItemIdentifier("TreeOutlineCell")
+            let cell = outlineView.makeView(withIdentifier: identifier, owner: self) as? TreeOutlineCellView
+                ?? TreeOutlineCellView(identifier: identifier)
+            cell.configure(node: item.node, isLoading: loadingNodeIDs.contains(item.node.id))
+            return cell
+        }
+
+        func outlineViewSelectionDidChange(_ notification: Notification) {
+            guard !isRestoringSelection, let outlineView = notification.object as? NSOutlineView else { return }
+            let row = outlineView.selectedRow
+            guard row >= 0, let item = outlineView.item(atRow: row) as? TreeOutlineItem else { return }
+            selectedID.wrappedValue = item.node.id
+            if item.node.isDirectory, !outlineView.isItemExpanded(item) {
+                outlineView.expandItem(item)
+            }
+        }
+
+        func outlineViewItemDidExpand(_ notification: Notification) {
+            guard !isRestoringExpansion,
+                  let item = notification.userInfo?["NSObject"] as? TreeOutlineItem else { return }
+            expandedIDs.wrappedValue.insert(item.node.id)
+            if item.node.children.isEmpty {
+                onExpand(item.node)
+            }
+        }
+
+        func outlineViewItemDidCollapse(_ notification: Notification) {
+            guard !isRestoringExpansion,
+                  let item = notification.userInfo?["NSObject"] as? TreeOutlineItem else { return }
+            expandedIDs.wrappedValue.remove(item.node.id)
+        }
+
+        private func restoreExpanded(_ ids: Set<String>, in outlineView: NSOutlineView) {
+            isRestoringExpansion = true
+            defer { isRestoringExpansion = false }
+
+            for id in ids {
+                guard let item = itemsByID[id], item.node.isDirectory else { continue }
+                outlineView.expandItem(item)
+            }
+            expandedIDs.wrappedValue = ids.intersection(Set(itemsByID.keys))
+        }
+
+        private func restoreSelection(_ id: String, in outlineView: NSOutlineView) {
+            guard let item = itemsByID[id] else { return }
+            let row = outlineView.row(forItem: item)
+            guard row >= 0 else { return }
+            if outlineView.selectedRow == row { return }
+
+            isRestoringSelection = true
+            outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            outlineView.scrollRowToVisible(row)
+            isRestoringSelection = false
+        }
+
+        private func currentExpandedIDs(in outlineView: NSOutlineView) -> Set<String> {
+            guard outlineView.numberOfRows > 0 else { return [] }
+            var ids = Set<String>()
+            for row in 0..<outlineView.numberOfRows {
+                guard let item = outlineView.item(atRow: row) as? TreeOutlineItem,
+                      outlineView.isItemExpanded(item) else { continue }
+                ids.insert(item.node.id)
+            }
+            return ids
+        }
+
+        private func reloadRows(withIDs ids: Set<String>, in outlineView: NSOutlineView) {
+            let rows = ids.compactMap { id -> Int? in
+                guard let item = itemsByID[id] else { return nil }
+                let row = outlineView.row(forItem: item)
+                return row >= 0 ? row : nil
+            }
+            guard !rows.isEmpty else { return }
+            outlineView.reloadData(
+                forRowIndexes: IndexSet(rows),
+                columnIndexes: IndexSet(integer: 0)
+            )
         }
     }
+}
 
-    private func toggleExpanded() {
-        if expandedIDs.contains(node.id) {
-            expandedIDs.remove(node.id)
+private final class TreeOutlineItem: NSObject {
+    let node: DirectoryTreeNode
+    let children: [TreeOutlineItem]
+
+    init(node: DirectoryTreeNode) {
+        self.node = node
+        self.children = node.children.map(TreeOutlineItem.init)
+    }
+
+    func indexedByID() -> [String: TreeOutlineItem] {
+        var result: [String: TreeOutlineItem] = [:]
+        appendIndex(to: &result)
+        return result
+    }
+
+    private func appendIndex(to result: inout [String: TreeOutlineItem]) {
+        result[node.id] = self
+        for child in children {
+            child.appendIndex(to: &result)
+        }
+    }
+}
+
+private final class TreeOutlineCellView: NSTableCellView {
+    private let iconView = NSImageView()
+    private let titleField = NSTextField(labelWithString: "")
+    private let countField = NSTextField(labelWithString: "")
+    private let spinner = NSProgressIndicator()
+
+    init(identifier: NSUserInterfaceItemIdentifier) {
+        super.init(frame: .zero)
+        self.identifier = identifier
+        setup()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func configure(node: DirectoryTreeNode, isLoading: Bool) {
+        imageView = iconView
+        textField = titleField
+
+        iconView.image = NSImage(systemSymbolName: node.kind.iconName, accessibilityDescription: nil)
+        iconView.contentTintColor = NSColor(depth: node.depth)
+        titleField.stringValue = node.name
+        countField.stringValue = node.isDirectory ? TreeFormatter.count(node.childCount) : ""
+        countField.isHidden = !node.isDirectory || isLoading
+
+        spinner.isHidden = !isLoading
+        if isLoading {
+            spinner.startAnimation(nil)
         } else {
-            expandedIDs.insert(node.id)
-            if node.children.isEmpty {
-                onExpand(node)
-            }
+            spinner.stopAnimation(nil)
         }
+    }
+
+    private func setup() {
+        wantsLayer = true
+        layer?.cornerRadius = 6
+
+        iconView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+
+        titleField.font = .systemFont(ofSize: 13)
+        titleField.lineBreakMode = .byTruncatingMiddle
+        titleField.translatesAutoresizingMaskIntoConstraints = false
+
+        countField.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        countField.textColor = .secondaryLabelColor
+        countField.alignment = .right
+        countField.translatesAutoresizingMaskIntoConstraints = false
+
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isIndeterminate = true
+        spinner.isDisplayedWhenStopped = false
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(iconView)
+        addSubview(titleField)
+        addSubview(countField)
+        addSubview(spinner)
+
+        NSLayoutConstraint.activate([
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 16),
+            iconView.heightAnchor.constraint(equalToConstant: 16),
+
+            titleField.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 7),
+            titleField.centerYAnchor.constraint(equalTo: centerYAnchor),
+            titleField.trailingAnchor.constraint(lessThanOrEqualTo: countField.leadingAnchor, constant: -8),
+
+            countField.centerYAnchor.constraint(equalTo: centerYAnchor),
+            countField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            countField.widthAnchor.constraint(greaterThanOrEqualToConstant: 24),
+
+            spinner.centerYAnchor.constraint(equalTo: centerYAnchor),
+            spinner.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            spinner.widthAnchor.constraint(equalToConstant: 14),
+            spinner.heightAnchor.constraint(equalToConstant: 14)
+        ])
+    }
+}
+
+private extension NSUserInterfaceItemIdentifier {
+    static let treeOutlineColumn = NSUserInterfaceItemIdentifier("TreeOutlineColumn")
+}
+
+private extension NSColor {
+    convenience init(depth: Int) {
+        let colors: [NSColor] = [
+            NSColor(red: 0.30, green: 0.72, blue: 1.0, alpha: 1.0),
+            NSColor(red: 0.28, green: 0.86, blue: 0.54, alpha: 1.0),
+            NSColor(red: 0.93, green: 0.63, blue: 0.24, alpha: 1.0),
+            NSColor(red: 0.82, green: 0.40, blue: 0.96, alpha: 1.0),
+            NSColor(red: 1.00, green: 0.35, blue: 0.50, alpha: 1.0),
+            NSColor(red: 0.42, green: 0.48, blue: 1.00, alpha: 1.0)
+        ]
+        self.init(cgColor: colors[depth % colors.count].cgColor)!
     }
 }
 
@@ -360,25 +657,31 @@ private struct TreeTextPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("Tree Text", systemImage: "text.alignleft")
-                    .font(.system(size: 15, weight: .semibold))
+            HStack(spacing: 10) {
+                TreePanelTitle(title: "Tree Text", systemImage: "text.alignleft")
 
                 Spacer()
 
                 Text("\(TreeFormatter.count(lineCount)) lines")
                     .font(.system(size: 12))
                     .foregroundStyle(TreePalette.secondaryText)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
 
                 Text(sourceTitle)
                     .font(.system(size: 12))
                     .foregroundStyle(TreePalette.secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 90, alignment: .trailing)
 
-                Stepper("Level \(model.options.textDepth)", value: $model.options.textDepth, in: 1...12)
-                    .onChange(of: model.options.textDepth) { _, _ in
-                        model.reloadTreeText()
-                    }
-                    .controlSize(.small)
+                TreeCompactStepper(
+                    title: "Level",
+                    value: $model.options.textDepth,
+                    range: 1...12
+                ) {
+                    model.reloadTreeText()
+                }
 
                 Button {
                     model.copyTreeText(displayText)
@@ -387,6 +690,7 @@ private struct TreeTextPanel: View {
                 }
                 .rckGlassButton()
                 .controlSize(.small)
+                .fixedSize()
             }
 
             TreePlainTextView(text: displayText)
@@ -516,7 +820,7 @@ private struct TreeInspectorPanel: View {
 
             VStack(alignment: .leading, spacing: 9) {
                 InspectorLine(title: "Kind", value: node.kind.rawValue)
-                InspectorLine(title: "Children", value: TreeFormatter.count(node.childCount))
+                InspectorLine(title: "Children", value: TreeFormatter.detailCount(node.childCount))
                 InspectorLine(title: "Modified", value: TreeFormatter.date(node.modifiedAt))
                 InspectorLine(title: "Hidden", value: node.isHidden ? "Yes" : "No")
                 InspectorLine(title: "Package", value: node.isPackage ? "Yes" : "No")

@@ -6,6 +6,14 @@ enum TreeFormatter {
         value.formatted(.number.grouping(.automatic))
     }
 
+    static func count(_ value: Int?) -> String {
+        value.map(count) ?? "..."
+    }
+
+    static func detailCount(_ value: Int?) -> String {
+        value.map(count) ?? "Pending"
+    }
+
     static func date(_ value: Date?) -> String {
         guard let value else { return "Unknown" }
         return value.formatted(date: .abbreviated, time: .shortened)
