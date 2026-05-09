@@ -51,7 +51,9 @@ struct TreeViewerView: View {
                     TreeOutlinePanel(
                         root: root,
                         selectedID: $selectedID,
-                        expandedIDs: $expandedIDs
+                        expandedIDs: $expandedIDs,
+                        loadingNodeIDs: model.loadingNodeIDs,
+                        onExpand: model.expandIfNeeded
                     )
                     .frame(minWidth: 310, idealWidth: 360, maxWidth: 420)
 
@@ -180,6 +182,8 @@ private struct TreeOutlinePanel: View {
     let root: DirectoryTreeNode
     @Binding var selectedID: String?
     @Binding var expandedIDs: Set<String>
+    let loadingNodeIDs: Set<String>
+    var onExpand: (DirectoryTreeNode) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -191,7 +195,9 @@ private struct TreeOutlinePanel: View {
                     TreeOutlineRow(
                         node: root,
                         selectedID: $selectedID,
-                        expandedIDs: $expandedIDs
+                        expandedIDs: $expandedIDs,
+                        loadingNodeIDs: loadingNodeIDs,
+                        onExpand: onExpand
                     )
                 }
                 .padding(.trailing, 8)
@@ -209,6 +215,8 @@ private struct TreeOutlineRow: View {
     let node: DirectoryTreeNode
     @Binding var selectedID: String?
     @Binding var expandedIDs: Set<String>
+    let loadingNodeIDs: Set<String>
+    var onExpand: (DirectoryTreeNode) -> Void
 
     private var isExpanded: Bool {
         expandedIDs.contains(node.id)
@@ -216,6 +224,10 @@ private struct TreeOutlineRow: View {
 
     private var isSelected: Bool {
         selectedID == node.id
+    }
+
+    private var isLoading: Bool {
+        loadingNodeIDs.contains(node.id)
     }
 
     var body: some View {
@@ -227,10 +239,16 @@ private struct TreeOutlineRow: View {
                 }
             } label: {
                 HStack(spacing: 7) {
-                    Image(systemName: node.children.isEmpty ? "chevron.right" : (isExpanded ? "chevron.down" : "chevron.right"))
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(node.children.isEmpty ? .clear : TreePalette.secondaryText)
-                        .frame(width: 12)
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .frame(width: 12)
+                    } else {
+                        Image(systemName: node.isDirectory && isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(node.isDirectory ? TreePalette.secondaryText : .clear)
+                            .frame(width: 12)
+                    }
 
                     Image(systemName: node.kind.iconName)
                         .font(.system(size: 13, weight: .semibold))
@@ -266,7 +284,9 @@ private struct TreeOutlineRow: View {
                     TreeOutlineRow(
                         node: child,
                         selectedID: $selectedID,
-                        expandedIDs: $expandedIDs
+                        expandedIDs: $expandedIDs,
+                        loadingNodeIDs: loadingNodeIDs,
+                        onExpand: onExpand
                     )
                 }
             }
@@ -278,6 +298,9 @@ private struct TreeOutlineRow: View {
             expandedIDs.remove(node.id)
         } else {
             expandedIDs.insert(node.id)
+            if node.children.isEmpty {
+                onExpand(node)
+            }
         }
     }
 }

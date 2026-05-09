@@ -20,6 +20,148 @@ enum TreeScanner {
             }
         }
     }
+
+    static func loadChildren(
+        for node: DirectoryTreeNode,
+        options: TreeScanOptions
+    ) async -> DirectoryTreeNode {
+        await Task.detached(priority: .userInitiated) {
+            DirectoryChildLoader(options: options).loadChildren(for: node)
+        }.value
+    }
+}
+
+private final class DirectoryChildLoader: @unchecked Sendable {
+    private let options: TreeScanOptions
+
+    init(options: TreeScanOptions) {
+        self.options = options
+    }
+
+    func loadChildren(for node: DirectoryTreeNode) -> DirectoryTreeNode {
+        let url = URL(fileURLWithPath: node.path)
+        let meta = metadata(url, includeChildCount: true)
+        guard meta.exists, meta.isDirectory, !meta.isSymbolicLink else {
+            return node
+        }
+
+        if meta.isPackage, !options.includePackages {
+            var replacement = node
+            replacement.childCount = meta.childCount
+            replacement.modifiedAt = meta.modifiedAt
+            replacement.isPackage = true
+            return replacement
+        }
+
+        let childDepth = node.depth + 1
+        let children = childURLs(of: url)
+            .filter { options.includeHidden || !isHidden($0) }
+            .map { childNode(for: $0, depth: childDepth) }
+            .filter { $0.kind != .missing }
+
+        var replacement = node
+        replacement.children = children
+        replacement.childCount = children.count
+        replacement.fileCount = children.reduce(0) { $0 + $1.fileCount }
+        replacement.folderCount = 1 + children.reduce(0) { $0 + $1.folderCount }
+        replacement.maxDepth = children.map(\.maxDepth).max() ?? node.depth
+        replacement.modifiedAt = meta.modifiedAt
+        replacement.isPackage = meta.isPackage
+        replacement.isTruncated = false
+        return replacement
+    }
+
+    private func childNode(for url: URL, depth: Int) -> DirectoryTreeNode {
+        let meta = metadata(url, includeChildCount: true)
+
+        let kind: TreeItemKind
+        if !meta.exists {
+            kind = .missing
+        } else if meta.isSymbolicLink {
+            kind = .symlink
+        } else if meta.isDirectory {
+            kind = .directory
+        } else {
+            kind = .file
+        }
+
+        return DirectoryTreeNode(
+            id: stableID(url, depth: depth),
+            name: displayName(url, meta: meta),
+            path: url.path,
+            kind: kind,
+            depth: depth,
+            children: [],
+            childCount: kind == .directory ? meta.childCount : 0,
+            fileCount: kind == .file || kind == .symlink ? 1 : 0,
+            folderCount: kind == .directory ? 1 : 0,
+            maxDepth: depth,
+            modifiedAt: meta.modifiedAt,
+            isHidden: isHidden(url),
+            isPackage: meta.isPackage,
+            isTruncated: false
+        )
+    }
+
+    private func childURLs(of directory: URL) -> [URL] {
+        let children = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: Array(Self.resourceKeys),
+            options: []
+        )) ?? []
+
+        let entries = children.map { TreeDirectoryEntry(url: $0, metadata: metadata($0)) }
+        return entries.sorted { lhs, rhs in
+            if lhs.metadata.isDirectory != rhs.metadata.isDirectory {
+                return lhs.metadata.isDirectory
+            }
+            return lhs.url.lastPathComponent.localizedStandardCompare(rhs.url.lastPathComponent) == .orderedAscending
+        }.map(\.url)
+    }
+
+    private func metadata(_ url: URL, includeChildCount: Bool = false) -> TreeMetadata {
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        let values = try? url.resourceValues(forKeys: Self.resourceKeys)
+        let childCount: Int
+        if includeChildCount, isDirectory.boolValue {
+            childCount = (try? FileManager.default.contentsOfDirectory(atPath: url.path).count) ?? 0
+        } else {
+            childCount = 0
+        }
+
+        return TreeMetadata(
+            exists: exists,
+            isDirectory: isDirectory.boolValue,
+            isSymbolicLink: values?.isSymbolicLink == true,
+            isPackage: values?.isPackage == true,
+            modifiedAt: values?.contentModificationDate,
+            childCount: childCount
+        )
+    }
+
+    private func displayName(_ url: URL, meta: TreeMetadata) -> String {
+        if url.path == "/" {
+            return "/"
+        }
+        let base = url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent
+        return meta.isDirectory && !meta.isSymbolicLink ? base + "/" : base
+    }
+
+    private func stableID(_ url: URL, depth: Int) -> String {
+        "\(url.standardizedFileURL.path)|\(depth)"
+    }
+
+    private func isHidden(_ url: URL) -> Bool {
+        url.lastPathComponent.hasPrefix(".")
+    }
+
+    private static let resourceKeys: Set<URLResourceKey> = [
+        .isDirectoryKey,
+        .isSymbolicLinkKey,
+        .isPackageKey,
+        .contentModificationDateKey
+    ]
 }
 
 private final class DirectoryScanner: @unchecked Sendable {

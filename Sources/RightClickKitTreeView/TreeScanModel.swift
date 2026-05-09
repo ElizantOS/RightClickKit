@@ -11,6 +11,7 @@ final class TreeScanModel: ObservableObject {
 
     @Published private(set) var phase: Phase
     @Published private(set) var treeText = TreeTextSnapshot.loading("Preparing tree output")
+    @Published private(set) var loadingNodeIDs: Set<String> = []
     @Published var options = TreeScanOptions()
     @Published var query = ""
 
@@ -18,6 +19,7 @@ final class TreeScanModel: ObservableObject {
     private var didStart = false
     private var scanTask: Task<Void, Never>?
     private var treeTextTask: Task<Void, Never>?
+    private var childLoadTasks: [String: Task<Void, Never>] = [:]
 
     init(request: TreeViewerRequest) {
         self.request = request
@@ -32,6 +34,7 @@ final class TreeScanModel: ObservableObject {
     deinit {
         scanTask?.cancel()
         treeTextTask?.cancel()
+        childLoadTasks.values.forEach { $0.cancel() }
     }
 
     func start() {
@@ -43,6 +46,9 @@ final class TreeScanModel: ObservableObject {
     func rescan() {
         scanTask?.cancel()
         treeTextTask?.cancel()
+        childLoadTasks.values.forEach { $0.cancel() }
+        childLoadTasks.removeAll()
+        loadingNodeIDs.removeAll()
         switch request {
         case let .scan(paths, currentDirectory):
             phase = .scanning(title: Self.title(for: paths))
@@ -70,6 +76,21 @@ final class TreeScanModel: ObservableObject {
             reloadTreeText(paths: paths, currentDirectory: currentDirectory, options: options)
         case .invalid:
             break
+        }
+    }
+
+    func expandIfNeeded(_ node: DirectoryTreeNode) {
+        guard node.isDirectory, node.children.isEmpty, !node.isTruncated else { return }
+        guard loadingNodeIDs.insert(node.id).inserted else { return }
+
+        let options = options
+        childLoadTasks[node.id]?.cancel()
+        childLoadTasks[node.id] = Task {
+            let replacement = await TreeScanner.loadChildren(for: node, options: options)
+            guard !Task.isCancelled else { return }
+            loadingNodeIDs.remove(node.id)
+            childLoadTasks[node.id] = nil
+            replaceNode(replacement)
         }
     }
 
@@ -125,6 +146,18 @@ final class TreeScanModel: ObservableObject {
         }
     }
 
+    private func replaceNode(_ replacement: DirectoryTreeNode) {
+        guard case var .displaying(snapshot) = phase else { return }
+
+        if snapshot.root.id == replacement.id {
+            snapshot.root = replacement
+        } else {
+            _ = snapshot.root.replaceDescendant(replacement)
+        }
+
+        phase = .displaying(snapshot)
+    }
+
     private static func title(for paths: [String]) -> String {
         if paths.count == 1, let first = paths.first {
             return URL(fileURLWithPath: first).lastPathComponent
@@ -133,6 +166,21 @@ final class TreeScanModel: ObservableObject {
             return "Directory Tree"
         }
         return "\(paths.count) selected items"
+    }
+}
+
+private extension DirectoryTreeNode {
+    mutating func replaceDescendant(_ replacement: DirectoryTreeNode) -> Bool {
+        for index in children.indices {
+            if children[index].id == replacement.id {
+                children[index] = replacement
+                return true
+            }
+            if children[index].replaceDescendant(replacement) {
+                return true
+            }
+        }
+        return false
     }
 }
 
