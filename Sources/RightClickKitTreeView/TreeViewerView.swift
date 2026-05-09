@@ -55,7 +55,7 @@ struct TreeViewerView: View {
                     )
                     .frame(minWidth: 310, idealWidth: 360, maxWidth: 420)
 
-                    TreeMapPanel(root: root, selectedID: $selectedID)
+                    TreeTextPanel(root: root)
                         .frame(minWidth: 360, maxWidth: .infinity)
 
                     TreeInspectorPanel(
@@ -282,26 +282,48 @@ private struct TreeOutlineRow: View {
     }
 }
 
-private struct TreeMapPanel: View {
+private struct TreeTextPanel: View {
     let root: DirectoryTreeNode
-    @Binding var selectedID: String?
+
+    private var treeText: String {
+        TreeTextRenderer.text(root, lineLimit: 30_000)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Structure Map", systemImage: "point.3.connected.trianglepath.dotted")
+                Label("Tree Text", systemImage: "text.alignleft")
                     .font(.system(size: 15, weight: .semibold))
 
                 Spacer()
 
-                Text("\(TreeFormatter.count(root.visibleNodeCount(limit: 1_200))) nodes")
+                Text("\(TreeFormatter.count(root.visibleNodeCount(limit: 30_000))) lines")
                     .font(.system(size: 12))
                     .foregroundStyle(TreePalette.secondaryText)
+
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(treeText, forType: .string)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                .rckGlassButton()
+                .controlSize(.small)
             }
 
-            TreeStructureCanvas(root: root, selectedID: $selectedID)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .frame(minHeight: 420)
+            ScrollView([.horizontal, .vertical]) {
+                Text(treeText)
+                    .font(.system(size: 12, design: .monospaced))
+                    .textSelection(.enabled)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: true, vertical: true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(14)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(minHeight: 420)
+            .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .padding(16)
         .rckGlassSurface(
@@ -311,136 +333,38 @@ private struct TreeMapPanel: View {
     }
 }
 
-private struct TreeStructureCanvas: View {
-    let root: DirectoryTreeNode
-    @Binding var selectedID: String?
-
-    private var layout: TreeMapLayout {
-        TreeMapLayout(root: root, limit: 1_200)
+private enum TreeTextRenderer {
+    static func text(_ root: DirectoryTreeNode, lineLimit: Int) -> String {
+        var lines: [String] = [root.name]
+        var remaining = max(lineLimit - 1, 0)
+        append(root.children, prefix: "", lines: &lines, remaining: &remaining)
+        return lines.joined(separator: "\n")
     }
 
-    var body: some View {
-        ScrollView([.horizontal, .vertical]) {
-            ZStack(alignment: .topLeading) {
-                Canvas(rendersAsynchronously: true) { context, _ in
-                    for node in layout.nodes {
-                        guard let from = layout.positions[node.id] else { continue }
-                        for child in node.children {
-                            guard let to = layout.positions[child.id] else { continue }
-                            var path = Path()
-                            path.move(to: from)
-                            let midX = (from.x + to.x) / 2
-                            path.addCurve(
-                                to: to,
-                                control1: CGPoint(x: midX, y: from.y),
-                                control2: CGPoint(x: midX, y: to.y)
-                            )
-                            context.stroke(
-                                path,
-                                with: .color(TreePalette.depthColor(child.depth).opacity(0.34)),
-                                lineWidth: 1.15
-                            )
-                        }
-                    }
+    private static func append(
+        _ nodes: [DirectoryTreeNode],
+        prefix: String,
+        lines: inout [String],
+        remaining: inout Int
+    ) {
+        guard remaining > 0 else { return }
 
-                    for node in layout.nodes {
-                        guard let point = layout.positions[node.id] else { continue }
-                        let selected = node.id == selectedID
-                        let radius: CGFloat = selected ? 5.8 : node.isDirectory ? 4.4 : 3.1
-                        let rect = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
-                        context.fill(Path(ellipseIn: rect), with: .color(TreePalette.depthColor(node.depth)))
-                        if selected {
-                            context.stroke(
-                                Path(ellipseIn: rect.insetBy(dx: -5, dy: -5)),
-                                with: .color(TreePalette.blue),
-                                lineWidth: 2
-                            )
-                        }
-                    }
-                }
-                .frame(width: layout.size.width, height: layout.size.height)
-                .drawingGroup()
-
-                ForEach(layout.nodes) { node in
-                    if let point = layout.positions[node.id] {
-                        TreeMapNodeLabel(
-                            node: node,
-                            isSelected: node.id == selectedID,
-                            onSelect: {
-                                selectedID = node.id
-                            }
-                        )
-                        .frame(width: 138, alignment: .leading)
-                        .position(x: point.x + 78, y: point.y)
-                    }
-                }
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-}
-
-private struct TreeMapNodeLabel: View {
-    let node: DirectoryTreeNode
-    let isSelected: Bool
-    var onSelect: () -> Void
-
-    var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 5) {
-                Image(systemName: node.kind.iconName)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(TreePalette.depthColor(node.depth))
-                    .frame(width: 12)
-
-                Text(node.name)
-                    .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(isSelected ? TreePalette.blue.opacity(0.14) : Color.clear)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct TreeMapLayout {
-    let nodes: [DirectoryTreeNode]
-    let positions: [String: CGPoint]
-    let size: CGSize
-
-    init(root: DirectoryTreeNode, limit: Int) {
-        let nodes = root.flattened(limit: limit)
-        self.nodes = nodes
-
-        let rowHeight: CGFloat = 28
-        let xStep: CGFloat = 185
-        let leftPadding: CGFloat = 28
-        let topPadding: CGFloat = 24
-        let maxDepth = max(nodes.map(\.depth).max() ?? 1, 1)
-
-        var positions: [String: CGPoint] = [:]
         for (index, node) in nodes.enumerated() {
-            positions[node.id] = CGPoint(
-                x: leftPadding + CGFloat(node.depth) * xStep,
-                y: topPadding + CGFloat(index) * rowHeight
-            )
-        }
+            guard remaining > 0 else {
+                lines.append(prefix + "... more entries")
+                return
+            }
 
-        self.positions = positions
-        self.size = CGSize(
-            width: leftPadding + CGFloat(maxDepth + 1) * xStep + 170,
-            height: topPadding * 2 + CGFloat(max(nodes.count, 1)) * rowHeight
-        )
+            let isLast = index == nodes.count - 1
+            let branch = isLast ? "└── " : "├── "
+            lines.append(prefix + branch + node.name)
+            remaining -= 1
+
+            let childPrefix = prefix + (isLast ? "    " : "│   ")
+            append(node.children, prefix: childPrefix, lines: &lines, remaining: &remaining)
+        }
     }
 }
-
 private struct TreeInspectorPanel: View {
     let snapshot: DirectoryTreeSnapshot
     let node: DirectoryTreeNode
@@ -494,9 +418,9 @@ private struct TreeInspectorPanel: View {
             .controlSize(.small)
 
             Button {
-                model.exportMarkdown(snapshot)
+                model.exportTreeText(snapshot)
             } label: {
-                Label("Copy Markdown Tree", systemImage: "square.and.arrow.up")
+                Label("Copy Tree Text", systemImage: "square.and.arrow.up")
             }
             .rckGlassButton(prominent: true)
             .controlSize(.small)

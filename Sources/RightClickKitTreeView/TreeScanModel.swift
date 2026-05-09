@@ -82,8 +82,8 @@ final class TreeScanModel: ObservableObject {
         }
     }
 
-    func exportMarkdown(_ snapshot: DirectoryTreeSnapshot) {
-        let text = DirectoryTreeExporter.markdown(snapshot.root)
+    func exportTreeText(_ snapshot: DirectoryTreeSnapshot) {
+        let text = DirectoryTreeExporter.text(snapshot.root)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }
@@ -136,19 +136,18 @@ enum TreeViewerRequest {
 }
 
 enum DirectoryTreeExporter {
-    static func markdown(_ root: DirectoryTreeNode) -> String {
-        var lines = ["```text", root.name]
+    static func text(_ root: DirectoryTreeNode) -> String {
+        var lines = [root.name]
         append(root.children, prefix: "", lines: &lines)
-        lines.append("```")
         return lines.joined(separator: "\n")
     }
 
     private static func append(_ nodes: [DirectoryTreeNode], prefix: String, lines: inout [String]) {
         for (index, node) in nodes.enumerated() {
             let isLast = index == nodes.count - 1
-            let branch = isLast ? "`-- " : "|-- "
+            let branch = isLast ? "└── " : "├── "
             lines.append(prefix + branch + node.name)
-            append(node.children, prefix: prefix + (isLast ? "    " : "|   "), lines: &lines)
+            append(node.children, prefix: prefix + (isLast ? "    " : "│   "), lines: &lines)
         }
     }
 }
