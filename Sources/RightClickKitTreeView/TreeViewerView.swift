@@ -55,7 +55,7 @@ struct TreeViewerView: View {
                     )
                     .frame(minWidth: 310, idealWidth: 360, maxWidth: 420)
 
-                    TreeTextPanel(root: root)
+                    TreeTextPanel(root: root, model: model)
                         .frame(minWidth: 360, maxWidth: .infinity)
 
                     TreeInspectorPanel(
@@ -284,9 +284,37 @@ private struct TreeOutlineRow: View {
 
 private struct TreeTextPanel: View {
     let root: DirectoryTreeNode
+    @ObservedObject var model: TreeScanModel
 
-    private var treeText: String {
-        TreeTextRenderer.text(root, lineLimit: 30_000)
+    private var isFiltered: Bool {
+        !model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var displayText: String {
+        if isFiltered {
+            return TreeTextRenderer.text(root, lineLimit: 30_000)
+        }
+
+        switch model.treeText {
+        case let .ready(text, _, _):
+            return text
+        case let .loading(message):
+            return "\(message)..."
+        case let .failed(message):
+            let fallback = TreeTextRenderer.text(root, lineLimit: 30_000)
+            return fallback + "\n\n# tree command unavailable: \(message)"
+        }
+    }
+
+    private var lineCount: Int {
+        if isFiltered {
+            return root.visibleNodeCount(limit: 30_000)
+        }
+        return model.treeText.lineCount ?? displayText.split(whereSeparator: \.isNewline).count
+    }
+
+    private var sourceTitle: String {
+        isFiltered ? "filtered" : model.treeText.title
     }
 
     var body: some View {
@@ -297,13 +325,16 @@ private struct TreeTextPanel: View {
 
                 Spacer()
 
-                Text("\(TreeFormatter.count(root.visibleNodeCount(limit: 30_000))) lines")
+                Text("\(TreeFormatter.count(lineCount)) lines")
+                    .font(.system(size: 12))
+                    .foregroundStyle(TreePalette.secondaryText)
+
+                Text(sourceTitle)
                     .font(.system(size: 12))
                     .foregroundStyle(TreePalette.secondaryText)
 
                 Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(treeText, forType: .string)
+                    model.copyTreeText(displayText)
                 } label: {
                     Label("Copy", systemImage: "doc.on.doc")
                 }
@@ -311,15 +342,7 @@ private struct TreeTextPanel: View {
                 .controlSize(.small)
             }
 
-            ScrollView([.horizontal, .vertical]) {
-                Text(treeText)
-                    .font(.system(size: 12, design: .monospaced))
-                    .textSelection(.enabled)
-                    .lineSpacing(2)
-                    .fixedSize(horizontal: true, vertical: true)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(14)
-            }
+            TreePlainTextView(text: displayText)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minHeight: 420)
             .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -330,6 +353,57 @@ private struct TreeTextPanel: View {
             in: RoundedRectangle(cornerRadius: 8, style: .continuous),
             interactive: true
         )
+    }
+}
+
+private struct TreePlainTextView: NSViewRepresentable {
+    let text: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = false
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+
+        let textView = NSTextView()
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.textColor = .labelColor
+        textView.textContainerInset = NSSize(width: 14, height: 14)
+        textView.isHorizontallyResizable = true
+        textView.isVerticallyResizable = true
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.containerSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.textContainer?.widthTracksTextView = false
+        textView.string = text
+
+        scrollView.documentView = textView
+        context.coordinator.textView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        let textView = context.coordinator.textView ?? scrollView.documentView as? NSTextView
+        guard let textView, textView.string != text else { return }
+        textView.string = text
+        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.textColor = .labelColor
+    }
+
+    final class Coordinator {
+        weak var textView: NSTextView?
     }
 }
 

@@ -10,12 +10,14 @@ final class TreeScanModel: ObservableObject {
     }
 
     @Published private(set) var phase: Phase
+    @Published private(set) var treeText = TreeTextSnapshot.loading("Preparing tree output")
     @Published var options = TreeScanOptions()
     @Published var query = ""
 
     private let request: TreeViewerRequest
     private var didStart = false
     private var scanTask: Task<Void, Never>?
+    private var treeTextTask: Task<Void, Never>?
 
     init(request: TreeViewerRequest) {
         self.request = request
@@ -29,6 +31,7 @@ final class TreeScanModel: ObservableObject {
 
     deinit {
         scanTask?.cancel()
+        treeTextTask?.cancel()
     }
 
     func start() {
@@ -39,10 +42,12 @@ final class TreeScanModel: ObservableObject {
 
     func rescan() {
         scanTask?.cancel()
+        treeTextTask?.cancel()
         switch request {
         case let .scan(paths, currentDirectory):
             phase = .scanning(title: Self.title(for: paths))
             let options = options
+            reloadTreeText(paths: paths, currentDirectory: currentDirectory, options: options)
             scanTask = Task {
                 for await snapshot in TreeScanner.snapshots(
                     paths: paths,
@@ -83,13 +88,31 @@ final class TreeScanModel: ObservableObject {
     }
 
     func exportTreeText(_ snapshot: DirectoryTreeSnapshot) {
-        let text = DirectoryTreeExporter.text(snapshot.root)
+        let text = treeText.text ?? DirectoryTreeExporter.text(snapshot.root)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    func copyTreeText(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }
 
     private func shellQuoted(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    private func reloadTreeText(paths: [String], currentDirectory: String, options: TreeScanOptions) {
+        treeText = .loading("Running tree")
+        treeTextTask = Task {
+            let snapshot = await TreeCommandRenderer.render(
+                paths: paths,
+                currentDirectory: currentDirectory,
+                options: options
+            )
+            guard !Task.isCancelled else { return }
+            treeText = snapshot
+        }
     }
 
     private static func title(for paths: [String]) -> String {
@@ -100,6 +123,41 @@ final class TreeScanModel: ObservableObject {
             return "Directory Tree"
         }
         return "\(paths.count) selected items"
+    }
+}
+
+enum TreeTextSnapshot {
+    case loading(String)
+    case ready(text: String, lineCount: Int, source: String)
+    case failed(String)
+
+    var text: String? {
+        switch self {
+        case let .ready(text, _, _):
+            text
+        case .loading, .failed:
+            nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case let .loading(message):
+            message
+        case let .ready(_, _, source):
+            source
+        case .failed:
+            "Swift fallback"
+        }
+    }
+
+    var lineCount: Int? {
+        switch self {
+        case let .ready(_, lineCount, _):
+            lineCount
+        case .loading, .failed:
+            nil
+        }
     }
 }
 
@@ -148,6 +206,79 @@ enum DirectoryTreeExporter {
             let branch = isLast ? "└── " : "├── "
             lines.append(prefix + branch + node.name)
             append(node.children, prefix: prefix + (isLast ? "    " : "│   "), lines: &lines)
+        }
+    }
+}
+
+enum TreeCommandRenderer {
+    static func render(paths: [String], currentDirectory: String, options: TreeScanOptions) async -> TreeTextSnapshot {
+        await Task.detached(priority: .userInitiated) {
+            guard let executable = treeExecutable() else {
+                return .failed("The tree command was not found.")
+            }
+
+            let currentURL = URL(fileURLWithPath: currentDirectory)
+            let targets = targetPaths(from: paths, currentDirectory: currentURL)
+            var arguments = ["--charset", "unicode", "-L", "\(max(1, options.maxDepth))"]
+            if options.includeHidden {
+                arguments.append("-a")
+            }
+            arguments += targets
+
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: executable)
+            process.currentDirectoryURL = currentURL
+            process.arguments = arguments
+
+            let output = Pipe()
+            let error = Pipe()
+            process.standardOutput = output
+            process.standardError = error
+
+            do {
+                try process.run()
+                let data = output.fileHandleForReading.readDataToEndOfFile()
+                let errorData = error.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+
+                if process.terminationStatus == 0 {
+                    let text = String(data: data, encoding: .utf8) ?? ""
+                    return .ready(
+                        text: text.trimmingCharacters(in: .newlines),
+                        lineCount: text.split(whereSeparator: \.isNewline).count,
+                        source: "tree"
+                    )
+                }
+
+                let message = String(data: errorData, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return .failed(message?.isEmpty == false ? message! : "tree exited with status \(process.terminationStatus)")
+            } catch {
+                return .failed(error.localizedDescription)
+            }
+        }.value
+    }
+
+    private static func treeExecutable() -> String? {
+        let candidates = [
+            ProcessInfo.processInfo.environment["RIGHTCLICKKIT_TREE_COMMAND"],
+            "/opt/homebrew/bin/tree",
+            "/usr/local/bin/tree",
+            "/usr/bin/tree"
+        ].compactMap { $0 }.filter { !$0.isEmpty }
+
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    private static func targetPaths(from items: [String], currentDirectory: URL) -> [String] {
+        let values = items.filter { !$0.isEmpty }
+        let rawTargets = values.isEmpty ? [currentDirectory.path] : values
+
+        return rawTargets.map { value in
+            if value.hasPrefix("/") {
+                return URL(fileURLWithPath: value).standardizedFileURL.path
+            }
+            return currentDirectory.appendingPathComponent(value).standardizedFileURL.path
         }
     }
 }

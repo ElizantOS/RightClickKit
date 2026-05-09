@@ -202,7 +202,7 @@ private final class DirectoryScanner: @unchecked Sendable {
             children: children,
             isTruncated: truncated
         )
-        recordProgress(partial, currentPath: url.path, continuation: continuation, force: true)
+        recordProgress(partial, currentPath: url.path, continuation: continuation, force: depth <= 1)
 
         for child in visibleCandidates {
             guard !Task.isCancelled else { break }
@@ -215,7 +215,7 @@ private final class DirectoryScanner: @unchecked Sendable {
                     children: children,
                     isTruncated: true
                 )
-                recordProgress(partial, currentPath: url.path, continuation: continuation, force: true)
+                recordProgress(partial, currentPath: url.path, continuation: continuation, force: depth <= 1)
                 break
             }
 
@@ -245,7 +245,7 @@ private final class DirectoryScanner: @unchecked Sendable {
             children: children,
             isTruncated: truncated
         )
-        recordProgress(final, currentPath: url.path, continuation: continuation, force: true)
+        recordProgress(final, currentPath: url.path, continuation: continuation, force: depth <= 1)
         return final
     }
 
