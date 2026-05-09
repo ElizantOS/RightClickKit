@@ -32,6 +32,7 @@ grep -q '"generatedAt"' "$STORAGE_REPORT"
 grep -q '"root"' "$STORAGE_REPORT"
 grep -q '"children"' "$STORAGE_REPORT"
 test -x "$BUILD_DIR/RightClickKitStorageView"
+test -x "$BUILD_DIR/RightClickKitTreeView"
 
 RIGHTCLICKKIT_HOME="$TMP_HOME" RIGHTCLICKKIT_SKIP_REFRESH=1 "$RCK" install --repo "$REPO_ROOT" --rck "$RCK"
 

@@ -6,9 +6,11 @@ SUPPORT_DIR="$HOME/.rightclickkit"
 BIN_DIR="$SUPPORT_DIR/bin"
 APP_DIR="$HOME/Applications/RightClickKit.app"
 STORAGE_APP_DIR="$APP_DIR/Contents/Helpers/RightClickKitStorageView.app"
+TREE_APP_DIR="$APP_DIR/Contents/Helpers/RightClickKitTreeView.app"
 
 mkdir -p "$BIN_DIR" "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 mkdir -p "$STORAGE_APP_DIR/Contents/MacOS" "$STORAGE_APP_DIR/Contents/Resources"
+mkdir -p "$TREE_APP_DIR/Contents/MacOS" "$TREE_APP_DIR/Contents/Resources"
 
 cd "$REPO_ROOT"
 SWIFT_BUILD_ARGS=(
@@ -23,9 +25,11 @@ BUILD_DIR="$(swift build "${SWIFT_BUILD_ARGS[@]}" --show-bin-path)"
 
 install -m 755 "$BUILD_DIR/rck" "$BIN_DIR/rck"
 install -m 755 "$BUILD_DIR/RightClickKitStorageView" "$BIN_DIR/RightClickKitStorageView"
+install -m 755 "$BUILD_DIR/RightClickKitTreeView" "$BIN_DIR/RightClickKitTreeView"
 install -m 755 "$BUILD_DIR/RightClickKitApp" "$APP_DIR/Contents/MacOS/RightClickKitApp"
 install -m 755 "$BUILD_DIR/rck" "$APP_DIR/Contents/Resources/rck"
 install -m 755 "$BUILD_DIR/RightClickKitStorageView" "$APP_DIR/Contents/Resources/RightClickKitStorageView"
+install -m 755 "$BUILD_DIR/RightClickKitTreeView" "$APP_DIR/Contents/Resources/RightClickKitTreeView"
 install -m 644 "$REPO_ROOT/Sources/RightClickKitApp/Info.plist" "$APP_DIR/Contents/Info.plist"
 install -m 644 "$REPO_ROOT/assets/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
 printf '%s\n' "$REPO_ROOT" > "$APP_DIR/Contents/Resources/repository-root.txt"
@@ -34,7 +38,12 @@ install -m 755 "$BUILD_DIR/RightClickKitStorageView" "$STORAGE_APP_DIR/Contents/
 install -m 644 "$REPO_ROOT/Sources/RightClickKitStorageView/Info.plist" "$STORAGE_APP_DIR/Contents/Info.plist"
 install -m 644 "$REPO_ROOT/assets/AppIcon.icns" "$STORAGE_APP_DIR/Contents/Resources/AppIcon.icns"
 printf 'APPL????' > "$STORAGE_APP_DIR/Contents/PkgInfo"
+install -m 755 "$BUILD_DIR/RightClickKitTreeView" "$TREE_APP_DIR/Contents/MacOS/RightClickKitTreeView"
+install -m 644 "$REPO_ROOT/Sources/RightClickKitTreeView/Info.plist" "$TREE_APP_DIR/Contents/Info.plist"
+install -m 644 "$REPO_ROOT/assets/AppIcon.icns" "$TREE_APP_DIR/Contents/Resources/AppIcon.icns"
+printf 'APPL????' > "$TREE_APP_DIR/Contents/PkgInfo"
 codesign --force --deep --sign - "$STORAGE_APP_DIR" >/dev/null 2>&1 || true
+codesign --force --deep --sign - "$TREE_APP_DIR" >/dev/null 2>&1 || true
 codesign --force --deep --sign - "$APP_DIR" >/dev/null 2>&1 || true
 
 "$BIN_DIR/rck" install --repo "$REPO_ROOT" --rck "$BIN_DIR/rck"

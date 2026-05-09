@@ -58,7 +58,9 @@ It keeps your repository files and logs.
 
 `storage-analysis` opens the native Storage Analysis window immediately and scans
 in the background. With `--no-open`, it writes local JSON data instead.
-`directory-tree` writes a text report and opens it in TextEdit.
+`directory-tree` opens the native Directory Tree window with an outline,
+structure map, inspector, search, and markdown export. With `--no-open`, it
+writes the older text report instead.
 
 ## Service Format
 

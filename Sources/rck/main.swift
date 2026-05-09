@@ -116,11 +116,13 @@ struct RCKCLI {
         let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         switch kind {
         case "directory-tree":
-            let reportURL = try ReportGenerator.writeDirectoryTreeReport(for: items, currentDirectory: currentDirectory)
             if shouldOpen {
-                try openReport(reportURL)
+                try openDirectoryTree(items: items, currentDirectory: currentDirectory)
+                print("Directory Tree: opened native viewer")
+            } else {
+                let reportURL = try ReportGenerator.writeDirectoryTreeReport(for: items, currentDirectory: currentDirectory)
+                print("Report: \(reportURL.path)")
             }
-            print("Report: \(reportURL.path)")
         case "storage-analysis":
             if shouldOpen {
                 try openStorageAnalysis(items: items, currentDirectory: currentDirectory)
@@ -194,6 +196,30 @@ struct RCKCLI {
         }
     }
 
+    private func openDirectoryTree(items: [String], currentDirectory: URL) throws {
+        let scanItems = items.isEmpty ? [currentDirectory.path] : items
+        let viewerArguments = ["--scan", "--cwd", currentDirectory.path, "--"] + scanItems
+
+        if let appURL = treeViewerAppURL() {
+            let result = try ProcessRunner.runCapturing(
+                "/usr/bin/open",
+                arguments: ["-n", appURL.path, "--args"] + viewerArguments
+            )
+            if result.status == 0 {
+                return
+            }
+        }
+
+        let viewer = treeViewerExecutablePath()
+        guard FileManager.default.isExecutableFile(atPath: viewer) else {
+            throw RightClickKitError.invalidValue(
+                "Directory tree viewer not installed. Expected \(viewer)",
+                currentDirectory
+            )
+        }
+        try ProcessRunner.runDetached(viewer, arguments: viewerArguments)
+    }
+
     private func openStorageAnalysis(items: [String], currentDirectory: URL) throws {
         let scanItems = items.isEmpty ? [currentDirectory.path] : items
         let viewerArguments = ["--scan", "--cwd", currentDirectory.path, "--"] + scanItems
@@ -218,6 +244,17 @@ struct RCKCLI {
         try ProcessRunner.runDetached(viewer, arguments: viewerArguments)
     }
 
+    private func treeViewerExecutablePath() -> String {
+        if let override = ProcessInfo.processInfo.environment["RIGHTCLICKKIT_TREE_VIEWER"], !override.isEmpty {
+            return override
+        }
+
+        return URL(fileURLWithPath: executablePath())
+            .deletingLastPathComponent()
+            .appendingPathComponent("RightClickKitTreeView")
+            .path
+    }
+
     private func storageViewerExecutablePath() -> String {
         if let override = ProcessInfo.processInfo.environment["RIGHTCLICKKIT_STORAGE_VIEWER"], !override.isEmpty {
             return override
@@ -227,6 +264,25 @@ struct RCKCLI {
             .deletingLastPathComponent()
             .appendingPathComponent("RightClickKitStorageView")
             .path
+    }
+
+    private func treeViewerAppURL() -> URL? {
+        let fileManager = FileManager.default
+
+        if let override = ProcessInfo.processInfo.environment["RIGHTCLICKKIT_TREE_VIEWER_APP"], !override.isEmpty {
+            let url = URL(fileURLWithPath: override)
+            if fileManager.fileExists(atPath: url.path) {
+                return url
+            }
+        }
+
+        let installedURL = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Applications/RightClickKit.app/Contents/Helpers/RightClickKitTreeView.app")
+        if fileManager.fileExists(atPath: installedURL.path) {
+            return installedURL
+        }
+
+        return nil
     }
 
     private func storageViewerAppURL() -> URL? {

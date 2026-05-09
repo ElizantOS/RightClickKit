@@ -1,6 +1,6 @@
 id: show-directory-tree
 title: Show Directory Tree
-description: Generate a TextEdit directory tree report for selected files or folders.
+description: Open a native directory tree viewer for selected files or folders.
 accepts: [file, folder]
 shell: /bin/zsh
 script: action.zsh

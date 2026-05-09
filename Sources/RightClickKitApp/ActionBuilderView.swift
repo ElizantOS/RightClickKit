@@ -178,7 +178,7 @@ struct ActionFieldsView: View {
                 .foregroundStyle(.secondary)
         case .showDirectoryTree:
             FieldRow(title: "Report") {
-                Text("TextEdit directory tree")
+                Text("Interactive directory map")
                     .foregroundStyle(.secondary)
             }
         case .analyzeStorage:
