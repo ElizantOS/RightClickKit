@@ -124,7 +124,7 @@ private struct TreeHeaderView: View {
                     .toggleStyle(.checkbox)
                     .onChange(of: model.options.includePackages) { _, _ in model.rescan() }
 
-                Stepper("Depth \(model.options.maxDepth)", value: $model.options.maxDepth, in: 1...14)
+                Stepper("Outline \(model.options.maxDepth)", value: $model.options.maxDepth, in: 1...10)
                     .onChange(of: model.options.maxDepth) { _, _ in model.rescan() }
 
                 Spacer()
@@ -332,6 +332,12 @@ private struct TreeTextPanel: View {
                 Text(sourceTitle)
                     .font(.system(size: 12))
                     .foregroundStyle(TreePalette.secondaryText)
+
+                Stepper("Level \(model.options.textDepth)", value: $model.options.textDepth, in: 1...12)
+                    .onChange(of: model.options.textDepth) { _, _ in
+                        model.reloadTreeText()
+                    }
+                    .controlSize(.small)
 
                 Button {
                     model.copyTreeText(displayText)

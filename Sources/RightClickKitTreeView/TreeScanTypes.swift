@@ -49,8 +49,9 @@ struct DirectoryTreeSnapshot: Equatable, Sendable {
 }
 
 struct TreeScanOptions: Equatable, Sendable {
-    var maxDepth: Int = 6
+    var maxDepth: Int = 3
+    var textDepth: Int = 3
     var includeHidden = false
     var includePackages = false
-    var maxEntries = 30000
+    var maxEntries = 6000
 }

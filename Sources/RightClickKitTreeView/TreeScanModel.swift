@@ -63,6 +63,16 @@ final class TreeScanModel: ObservableObject {
         }
     }
 
+    func reloadTreeText() {
+        treeTextTask?.cancel()
+        switch request {
+        case let .scan(paths, currentDirectory):
+            reloadTreeText(paths: paths, currentDirectory: currentDirectory, options: options)
+        case .invalid:
+            break
+        }
+    }
+
     func reveal(_ node: DirectoryTreeNode) {
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: node.path)])
     }
@@ -219,7 +229,7 @@ enum TreeCommandRenderer {
 
             let currentURL = URL(fileURLWithPath: currentDirectory)
             let targets = targetPaths(from: paths, currentDirectory: currentURL)
-            var arguments = ["--charset", "unicode", "-L", "\(max(1, options.maxDepth))"]
+            var arguments = ["--charset", "unicode", "--noreport", "--dirsfirst", "-L", "\(max(1, options.textDepth))"]
             if options.includeHidden {
                 arguments.append("-a")
             }
@@ -243,10 +253,11 @@ enum TreeCommandRenderer {
 
                 if process.terminationStatus == 0 {
                     let text = String(data: data, encoding: .utf8) ?? ""
+                    let trimmed = text.trimmingCharacters(in: .newlines)
                     return .ready(
-                        text: text.trimmingCharacters(in: .newlines),
-                        lineCount: text.split(whereSeparator: \.isNewline).count,
-                        source: "tree"
+                        text: trimmed,
+                        lineCount: trimmed.split(whereSeparator: \.isNewline).count,
+                        source: "tree -L \(max(1, options.textDepth))"
                     )
                 }
 
