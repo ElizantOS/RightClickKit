@@ -113,16 +113,7 @@ struct SidebarActionRow: View {
     }
 
     private var iconName: String {
-        switch action.mode == .action ? action.action.type : nil {
-        case .openWithApp: "app"
-        case .openWithCodeEditor: "curlybraces"
-        case .openTerminalHere: "terminal"
-        case .copyPaths: "doc.on.doc"
-        case .runCommand: "play.rectangle"
-        case .showDirectoryTree: "list.bullet.indent"
-        case .analyzeStorage: "chart.pie"
-        case nil: "terminal"
-        }
+        action.mode == .action ? action.action.type.systemImage : "terminal"
     }
 }
 

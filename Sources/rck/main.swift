@@ -31,6 +31,9 @@ struct RCKCLI {
             case "report":
                 try report(rest)
                 return 0
+            case "action":
+                try action(rest)
+                return 0
             case "config":
                 try config()
                 return 0
@@ -136,6 +139,33 @@ struct RCKCLI {
                 "unknown report kind: \(kind)",
                 URL(fileURLWithPath: ".")
             )
+        }
+    }
+
+    private func action(_ args: [String]) throws {
+        guard args.first == "run", let actionID = args.dropFirst().first else {
+            throw RightClickKitError.invalidValue(
+                "usage: rck action run <action-id> [paths...]",
+                URL(fileURLWithPath: ".")
+            )
+        }
+
+        let items = Array(args.dropFirst(2))
+        let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        switch actionID {
+        case NativeToolID.directoryTree.rawValue:
+            try openDirectoryTree(items: items, currentDirectory: currentDirectory)
+            print("Directory Tree: opened native viewer")
+        case NativeToolID.storageAnalysis.rawValue:
+            try openStorageAnalysis(items: items, currentDirectory: currentDirectory)
+            print("Storage Analysis: opened native viewer")
+        default:
+            let config = try ConfigStore(paths: paths).load()
+            let runner = ServiceRunner(config: config, paths: paths)
+            let status = try runner.run(serviceID: actionID, arguments: items)
+            if status != 0 {
+                throw RightClickKitError.commandFailed("rck run \(actionID)", status)
+            }
         }
     }
 
@@ -315,6 +345,7 @@ struct RCKCLI {
           rck run <service-id> [paths...]
           rck logs [service-id]
           rck report <directory-tree|storage-analysis> [--no-open] [paths...]
+          rck action run <action-id> [paths...]
           rck config
         """)
     }

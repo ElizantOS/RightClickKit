@@ -1,9 +1,10 @@
 #!/bin/zsh
 set -euo pipefail
 
-rck="${RCK_HELPER:-}"
-if [[ -z "$rck" ]]; then
-  rck="$HOME/.rightclickkit/bin/rck"
+rck="${RCK_HELPER:-$HOME/.rightclickkit/bin/rck}"
+if [[ ! -x "$rck" ]]; then
+  echo "missing rck executable: $rck" >&2
+  exit 127
 fi
 
-"$rck" report directory-tree "$@"
+"$rck" action run 'directory-tree' "$@"

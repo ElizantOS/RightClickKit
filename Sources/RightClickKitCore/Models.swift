@@ -23,17 +23,17 @@ public enum RightClickKitError: Error, CustomStringConvertible {
     }
 }
 
-public enum ServiceAccepts: String, Codable, CaseIterable {
+public enum ServiceAccepts: String, Codable, CaseIterable, Sendable {
     case file
     case folder
 }
 
-public enum ServiceMode: String, Codable, Equatable {
+public enum ServiceMode: String, Codable, Equatable, Sendable {
     case action
     case rawScript
 }
 
-public enum ActionType: String, Codable, CaseIterable, Equatable {
+public enum ActionType: String, Codable, CaseIterable, Equatable, Sendable {
     case openWithApp
     case openWithCodeEditor
     case openTerminalHere
@@ -43,19 +43,19 @@ public enum ActionType: String, Codable, CaseIterable, Equatable {
     case analyzeStorage
 
     public var title: String {
-        switch self {
-        case .openWithApp: "Open with App"
-        case .openWithCodeEditor: "Open with Code Editor"
-        case .openTerminalHere: "Open Terminal Here"
-        case .copyPaths: "Copy Paths"
-        case .runCommand: "Run Command"
-        case .showDirectoryTree: "Show Directory Tree"
-        case .analyzeStorage: "Analyze Storage"
-        }
+        ActionRegistry.builtIn.manifest(for: self).title
+    }
+
+    public var systemImage: String {
+        ActionRegistry.builtIn.manifest(for: self).systemImage
+    }
+
+    public var kind: ActionKind {
+        ActionRegistry.builtIn.manifest(for: self).kind
     }
 }
 
-public enum CopyPathsFormat: String, Codable, CaseIterable, Equatable {
+public enum CopyPathsFormat: String, Codable, CaseIterable, Equatable, Sendable {
     case lines
     case spaces
     case json
@@ -69,7 +69,7 @@ public enum CopyPathsFormat: String, Codable, CaseIterable, Equatable {
     }
 }
 
-public struct ActionConfig: Codable, Equatable {
+public struct ActionConfig: Codable, Equatable, Sendable {
     public var type: ActionType
     public var appName: String
     public var bundleID: String
@@ -97,7 +97,7 @@ public struct ActionConfig: Codable, Equatable {
     }
 }
 
-public struct ServiceDefinition: Identifiable, Codable, Equatable {
+public struct ServiceDefinition: Identifiable, Codable, Equatable, Sendable {
     public var id: String
     public var title: String
     public var description: String
@@ -145,7 +145,7 @@ public struct ServiceDefinition: Identifiable, Codable, Equatable {
     }
 }
 
-public struct RightClickKitConfig: Codable, Equatable {
+public struct RightClickKitConfig: Codable, Equatable, Sendable {
     public var repositoryRoot: String
     public var rckPath: String
 

@@ -82,6 +82,11 @@ struct ActionBuilderView: View {
                 Label("Configure", systemImage: "slider.horizontal.3")
                     .font(.headline)
                 Spacer()
+                if action.mode == .action {
+                    Label(action.action.type.kind.title, systemImage: action.action.type.systemImage)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
                 Picker("Action Type", selection: action.actionTypeBinding) {
                     ForEach(ActionType.allCases, id: \.self) { type in
                         Text(type.title).tag(type)

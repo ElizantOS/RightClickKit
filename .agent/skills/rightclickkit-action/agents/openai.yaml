@@ -1,0 +1,3 @@
+display_name: RightClickKit Action
+short_description: Build Finder right-click actions for RightClickKit.
+default_prompt: Add or refine a RightClickKit action using the project action registry and validation flow.

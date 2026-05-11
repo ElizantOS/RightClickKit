@@ -2,7 +2,42 @@ import Foundation
 
 public enum ActionScriptGenerator {
     public static func generate(_ action: ActionConfig) -> String {
-        switch action.type {
+        generate(action, registry: .builtIn)
+    }
+
+    public static func generate(_ action: ActionConfig, registry: ActionRegistry) -> String {
+        let manifest = registry.manifest(for: action.type)
+        return generate(action, manifest: manifest)
+    }
+
+    public static func generate(_ action: ActionConfig, manifest: ActionManifest) -> String {
+        switch manifest.entryPoint {
+        case let .nativeTool(tool):
+            return nativeToolScript(tool: tool)
+        case .agent:
+            return """
+            #!/bin/zsh
+            echo "RightClickKit agent actions are not wired yet." >&2
+            exit 64
+            """
+        case .script:
+            return """
+            #!/bin/zsh
+            \(action.command)
+            """
+        case .workflow:
+            return """
+            #!/bin/zsh
+            echo "RightClickKit workflow actions are not wired yet." >&2
+            exit 64
+            """
+        case let .builtIn(type):
+            return generateBuiltIn(action, type: type)
+        }
+    }
+
+    private static func generateBuiltIn(_ action: ActionConfig, type: ActionType) -> String {
+        switch type {
         case .openWithApp:
             let bundleID = action.bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
             if !bundleID.isEmpty {
@@ -79,24 +114,25 @@ public enum ActionScriptGenerator {
             """
 
         case .showDirectoryTree:
-            return reportScript(kind: "directory-tree")
+            return nativeToolScript(tool: .directoryTree)
 
         case .analyzeStorage:
-            return reportScript(kind: "storage-analysis")
+            return nativeToolScript(tool: .storageAnalysis)
         }
     }
 
-    private static func reportScript(kind: String) -> String {
+    private static func nativeToolScript(tool: NativeToolID) -> String {
         """
         #!/bin/zsh
         set -euo pipefail
 
-        rck="${RCK_HELPER:-}"
-        if [[ -z "$rck" ]]; then
-          rck="$HOME/.rightclickkit/bin/rck"
+        rck="${RCK_HELPER:-$HOME/.rightclickkit/bin/rck}"
+        if [[ ! -x "$rck" ]]; then
+          echo "missing rck executable: $rck" >&2
+          exit 127
         fi
 
-        "$rck" report \(kind) "$@"
+        "$rck" action run \(Shell.quote(tool.rawValue)) "$@"
         """
     }
 }
