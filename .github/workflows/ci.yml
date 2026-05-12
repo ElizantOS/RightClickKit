@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-smoke:
+    name: Build and smoke test
+    runs-on: macos-15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build
+        run: |
+          swift build \
+            --disable-sandbox \
+            --disable-build-manifest-caching \
+            --cache-path .build/cache \
+            --scratch-path .build/swiftpm
+
+      - name: Smoke test
+        run: ./scripts/smoke-test.sh
