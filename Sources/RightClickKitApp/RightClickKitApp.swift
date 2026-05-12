@@ -10,6 +10,7 @@ final class RightClickKitController {
 
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
+        ensureAgentRunning()
 
         let contentView = ContentView()
             .frame(minWidth: 920, minHeight: 620)
@@ -30,6 +31,19 @@ final class RightClickKitController {
 
         app.activate(ignoringOtherApps: true)
         app.run()
+    }
+
+    private func ensureAgentRunning() {
+        let agentURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers", isDirectory: true)
+            .appendingPathComponent("RightClickKitAgent.app", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: agentURL.path) else {
+            return
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        NSWorkspace.shared.openApplication(at: agentURL, configuration: configuration) { _, _ in }
     }
 }
 

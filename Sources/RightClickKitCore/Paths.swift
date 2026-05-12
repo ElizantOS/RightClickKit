@@ -25,6 +25,14 @@ public struct RCKPaths {
         supportDirectory.appendingPathComponent("config.json")
     }
 
+    public var activityURL: URL {
+        supportDirectory.appendingPathComponent("activity.json")
+    }
+
+    public var activityLockURL: URL {
+        supportDirectory.appendingPathComponent("activity.lock")
+    }
+
     public var userServicesDirectory: URL {
         home.appendingPathComponent("Library/Services", isDirectory: true)
     }

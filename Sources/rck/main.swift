@@ -34,6 +34,9 @@ struct RCKCLI {
             case "action":
                 try action(rest)
                 return 0
+            case "notify":
+                try notify(rest)
+                return 0
             case "config":
                 try config()
                 return 0
@@ -169,6 +172,49 @@ struct RCKCLI {
         }
     }
 
+    private func notify(_ args: [String]) throws {
+        guard let first = args.first else {
+            throw RightClickKitError.invalidValue(
+                "usage: rck notify <title> [--body TEXT] [--level info|success|warning|danger] [--status running|waiting|review|failed|done] [--source NAME] [--id ID] | list | read | clear",
+                URL(fileURLWithPath: ".")
+            )
+        }
+
+        let store = ActivityStore(paths: paths)
+        switch first {
+        case "list":
+            let items = try store.list()
+            for item in items {
+                let unread = item.readAt == nil ? "unread" : "read"
+                print("\(item.id)\t\(item.status.rawValue)\t\(item.level.rawValue)\t\(unread)\t\(item.title)")
+            }
+        case "read":
+            try store.markAllRead()
+            print("Marked all notifications as read.")
+        case "clear":
+            try store.clear()
+            print("Cleared notifications.")
+        default:
+            let title = first
+            let body = optionValue("--body", in: args) ?? ""
+            let source = optionValue("--source", in: args) ?? "CLI"
+            let id = optionValue("--id", in: args)
+            let status = try parseStatus(optionValue("--status", in: args) ?? "review")
+            let level = try parseOptionalLevel(optionValue("--level", in: args))
+            let readAt = args.contains("--read") ? Date() : nil
+            let item = try store.append(
+                id: id,
+                source: source,
+                title: title,
+                body: body,
+                status: status,
+                level: level,
+                readAt: readAt
+            )
+            print(item.id)
+        }
+    }
+
     private func config() throws {
         let config = try ConfigStore(paths: paths).load()
         let data = try JSONEncoder.pretty.encode(config)
@@ -198,6 +244,29 @@ struct RCKCLI {
         let valueIndex = args.index(after: index)
         guard valueIndex < args.endIndex else { return nil }
         return args[valueIndex]
+    }
+
+    private func parseStatus(_ rawValue: String) throws -> ActivityStatus {
+        guard let status = ActivityStatus(rawValue: rawValue) else {
+            throw RightClickKitError.invalidValue(
+                "unknown notification status: \(rawValue)",
+                URL(fileURLWithPath: ".")
+            )
+        }
+        return status
+    }
+
+    private func parseOptionalLevel(_ rawValue: String?) throws -> ActivityLevel? {
+        guard let rawValue else {
+            return nil
+        }
+        guard let level = ActivityLevel(rawValue: rawValue) else {
+            throw RightClickKitError.invalidValue(
+                "unknown notification level: \(rawValue)",
+                URL(fileURLWithPath: ".")
+            )
+        }
+        return level
     }
 
     private func executablePath() -> String {
@@ -346,6 +415,8 @@ struct RCKCLI {
           rck logs [service-id]
           rck report <directory-tree|storage-analysis> [--no-open] [paths...]
           rck action run <action-id> [paths...]
+          rck notify <title> [--body TEXT] [--level info|success|warning|danger] [--status running|waiting|review|failed|done] [--source NAME] [--id ID]
+          rck notify list|read|clear
           rck config
         """)
     }

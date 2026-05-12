@@ -12,6 +12,7 @@ public struct ServiceRunner {
     public func run(serviceID: String, arguments: [String]) throws -> Int32 {
         let store = ServiceStore(servicesDirectory: config.servicesURL)
         let service = try store.loadService(id: serviceID)
+        let activityStore = ActivityStore(paths: paths)
 
         var items = arguments.filter { !$0.isEmpty }
         if items.isEmpty {
@@ -31,13 +32,26 @@ public struct ServiceRunner {
 
         appendLog(serviceID: serviceID, text: "\n[\(Date())] run \(serviceID)\n")
         appendLog(serviceID: serviceID, text: "items: \(items.joined(separator: " | "))\n")
+        let activity = try? activityStore.startRun(serviceID: serviceID, title: service.title, items: items)
 
-        let result = try ProcessRunner.runCapturing(
-            service.shell,
-            arguments: [service.scriptURL.path] + items,
-            currentDirectory: cwd,
-            environment: environment
-        )
+        let result: (status: Int32, output: String)
+        do {
+            result = try ProcessRunner.runCapturing(
+                service.shell,
+                arguments: [service.scriptURL.path] + items,
+                currentDirectory: cwd,
+                environment: environment
+            )
+        } catch {
+            _ = try? activityStore.finishRun(
+                id: activity?.id,
+                serviceID: serviceID,
+                title: service.title,
+                status: .failed,
+                body: "Launch failed: \(error)"
+            )
+            throw error
+        }
 
         if !result.output.isEmpty {
             appendLog(serviceID: serviceID, text: result.output)
@@ -46,6 +60,13 @@ public struct ServiceRunner {
             }
         }
         appendLog(serviceID: serviceID, text: "exit: \(result.status)\n")
+        _ = try? activityStore.finishRun(
+            id: activity?.id,
+            serviceID: serviceID,
+            title: service.title,
+            status: result.status == 0 ? .review : .failed,
+            body: result.status == 0 ? successBody(for: service.title, items: items) : failureBody(status: result.status, output: result.output)
+        )
         return result.status
     }
 
@@ -124,5 +145,27 @@ public struct ServiceRunner {
         } catch {
             return
         }
+    }
+
+    private func successBody(for title: String, items: [String]) -> String {
+        if items.isEmpty {
+            return "\(title) finished."
+        }
+        if items.count == 1 {
+            return "\(title) finished for \(items[0])."
+        }
+        return "\(title) finished for \(items.count) items."
+    }
+
+    private func failureBody(status: Int32, output: String) -> String {
+        let trimmedOutput = output
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .newlines)
+            .suffix(3)
+            .joined(separator: "\n")
+        if trimmedOutput.isEmpty {
+            return "Exited with status \(status)."
+        }
+        return "Exited with status \(status): \(trimmedOutput)"
     }
 }

@@ -22,6 +22,12 @@ RCK="$BUILD_DIR/rck"
 
 RIGHTCLICKKIT_HOME="$TMP_HOME" "$RCK" list --repo "$REPO_ROOT"
 
+NOTIFY_ID="$(RIGHTCLICKKIT_HOME="$TMP_HOME" "$RCK" notify "Smoke Activity" --body "CLI notification entry" --status review --level success --source smoke)"
+test -n "$NOTIFY_ID"
+RIGHTCLICKKIT_HOME="$TMP_HOME" "$RCK" notify list | grep -q "Smoke Activity"
+RIGHTCLICKKIT_HOME="$TMP_HOME" "$RCK" notify read | grep -q "Marked all notifications as read."
+RIGHTCLICKKIT_HOME="$TMP_HOME" "$RCK" notify clear | grep -q "Cleared notifications."
+
 TREE_REPORT="$("$RCK" report directory-tree --no-open "$REPO_ROOT/services" | sed 's/^Report: //')"
 test -s "$TREE_REPORT"
 grep -q 'show-directory-tree' "$TREE_REPORT"
@@ -33,6 +39,7 @@ grep -q '"root"' "$STORAGE_REPORT"
 grep -q '"children"' "$STORAGE_REPORT"
 test -x "$BUILD_DIR/RightClickKitStorageView"
 test -x "$BUILD_DIR/RightClickKitTreeView"
+test -x "$BUILD_DIR/RightClickKitAgent"
 
 RIGHTCLICKKIT_HOME="$TMP_HOME" RIGHTCLICKKIT_SKIP_REFRESH=1 "$RCK" install --repo "$REPO_ROOT" --rck "$RCK"
 
