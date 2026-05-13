@@ -3,6 +3,7 @@
 .swiftpm/
 .codex/
 tmp/
+dist/
 DerivedData/
 *.xcuserdata/
 *.xcworkspace/

@@ -67,8 +67,7 @@ final class ActivityPopoverWindowController {
     private func makeRootView(items: [ActivityItem]) -> ActivityPopoverView {
         ActivityPopoverView(
             items: items,
-            onMarkRead: { [weak self] in
-                AgentActions.markActivityRead()
+            onClose: { [weak self] in
                 self?.hide()
             },
             onMarkItemRead: { [weak self] id in
@@ -139,7 +138,7 @@ private final class ActivityPopoverHostingView: NSHostingView<ActivityPopoverVie
 private struct ActivityPopoverView: View {
     let items: [ActivityItem]
 
-    let onMarkRead: () -> Void
+    let onClose: () -> Void
     let onMarkItemRead: (String) -> Void
     let onClear: () -> Void
     let onOpenLogs: () -> Void
@@ -153,7 +152,7 @@ private struct ActivityPopoverView: View {
         VStack(alignment: .trailing, spacing: 7) {
             ActivityToolbarView(
                 unreadCount: items.filter { $0.readAt == nil }.count,
-                onMarkRead: onMarkRead,
+                onClose: onClose,
                 onOpenLogs: onOpenLogs,
                 onClear: onClear
             )
@@ -191,7 +190,7 @@ private struct ActivityPopoverView: View {
 
 private struct ActivityToolbarView: View {
     let unreadCount: Int
-    let onMarkRead: () -> Void
+    let onClose: () -> Void
     let onOpenLogs: () -> Void
     let onClear: () -> Void
 
@@ -211,11 +210,11 @@ private struct ActivityToolbarView: View {
             }
             .buttonStyle(.plain)
             .help("Clear history")
-            Button(action: onMarkRead) {
+            Button(action: onClose) {
                 Image(systemName: "checkmark.circle.fill")
             }
             .buttonStyle(.plain)
-            .help("Mark all read and close")
+            .help("Close")
         }
         .padding(.horizontal, 12)
         .frame(width: 258, height: 28)

@@ -34,6 +34,13 @@ Fireball remains available as an alternate built-in pet.
 
 ## Install
 
+Requirements:
+
+- macOS 14 or newer
+- Xcode Command Line Tools: `xcode-select --install`
+
+Install from a source checkout:
+
 ```bash
 ./scripts/install.sh
 ```
@@ -59,6 +66,37 @@ You can also launch the app directly:
 ```bash
 open ~/Applications/RightClickKit.app
 ```
+
+Remove everything again with:
+
+```bash
+./scripts/uninstall.sh
+```
+
+## Build Without Installing
+
+Build the Swift package only:
+
+```bash
+swift build --disable-sandbox --disable-build-manifest-caching --cache-path .build/cache --scratch-path .build/swiftpm
+```
+
+Create an unsigned preview `.app` bundle under `dist/` without touching
+`~/Applications`, LaunchAgents, or Finder services:
+
+```bash
+./scripts/package-artifact.sh
+```
+
+That produces:
+
+- `dist/RightClickKit.app`
+- `dist/RightClickKit-macos-unsigned.zip`
+- `dist/rck`
+
+This preview build is useful for UI checks and ad hoc CLI testing. For the full
+Finder workflow install, keep using `./scripts/install.sh` from a real source
+checkout.
 
 ## CLI
 
@@ -146,6 +184,22 @@ swift build --disable-sandbox --disable-build-manifest-caching --cache-path .bui
 ./scripts/smoke-test.sh
 ./scripts/install.sh
 ```
+
+## CI
+
+GitHub Actions already runs the SwiftPM build and smoke test on pull requests
+and pushes to `main`.
+
+It can also prebuild a downloadable artifact:
+
+- Run the `CI` workflow manually from the Actions tab, or use a fresh push to
+  `main`.
+- The workflow uploads `RightClickKit-macos-preview` as an artifact.
+- The artifact contains an unsigned `RightClickKit.app` zip plus the `rck` CLI.
+
+Because the artifact is unsigned and does not embed your repo-managed service
+configuration as a standalone distribution, treat it as a preview build. For
+real local installation of Finder actions, use `./scripts/install.sh`.
 
 Logs are written to:
 

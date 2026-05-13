@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   build-and-smoke:
@@ -27,3 +28,25 @@ jobs:
 
       - name: Smoke test
         run: ./scripts/smoke-test.sh
+
+  package-artifact:
+    name: Package preview artifact
+    runs-on: macos-15
+    needs: build-and-smoke
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Package unsigned app bundle
+        run: ./scripts/package-artifact.sh
+
+      - name: Upload preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RightClickKit-macos-preview
+          path: |
+            dist/RightClickKit-macos-unsigned.zip
+            dist/rck
+            dist/ARTIFACT_README.txt
+          if-no-files-found: error

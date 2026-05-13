@@ -1,0 +1,99 @@
+#!/bin/zsh
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DIST_DIR="${1:-$REPO_ROOT/dist}"
+APP_DIR="$DIST_DIR/RightClickKit.app"
+AGENT_APP_DIR="$APP_DIR/Contents/Helpers/RightClickKitAgent.app"
+STORAGE_APP_DIR="$APP_DIR/Contents/Helpers/RightClickKitStorageView.app"
+TREE_APP_DIR="$APP_DIR/Contents/Helpers/RightClickKitTreeView.app"
+ZIP_PATH="$DIST_DIR/RightClickKit-macos-unsigned.zip"
+FIREBALL_ASSET="webview/assets/fireball-spritesheet-v4-BtU8R9Qp.webp"
+FIREBALL_RESOURCE="fireball-spritesheet-v4-BtU8R9Qp.webp"
+DIMO_RESOURCE="rck-dimo-spritesheet.webp"
+DIMO_ASSET="assets/pets/rck-dimo/$DIMO_RESOURCE"
+CODEX_APP_ASAR="/Applications/Codex.app/Contents/Resources/app.asar"
+
+rm -rf "$APP_DIR" "$ZIP_PATH"
+mkdir -p "$DIST_DIR" "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
+mkdir -p "$AGENT_APP_DIR/Contents/MacOS" "$AGENT_APP_DIR/Contents/Resources"
+mkdir -p "$STORAGE_APP_DIR/Contents/MacOS" "$STORAGE_APP_DIR/Contents/Resources"
+mkdir -p "$TREE_APP_DIR/Contents/MacOS" "$TREE_APP_DIR/Contents/Resources"
+
+cd "$REPO_ROOT"
+SWIFT_BUILD_ARGS=(
+  --disable-sandbox
+  --disable-build-manifest-caching
+  --cache-path .build/cache
+  --scratch-path .build/swiftpm
+  -c release
+)
+swift build "${SWIFT_BUILD_ARGS[@]}"
+BUILD_DIR="$(swift build "${SWIFT_BUILD_ARGS[@]}" --show-bin-path)"
+
+install -m 755 "$BUILD_DIR/rck" "$DIST_DIR/rck"
+install -m 755 "$BUILD_DIR/RightClickKitApp" "$APP_DIR/Contents/MacOS/RightClickKitApp"
+install -m 755 "$BUILD_DIR/rck" "$APP_DIR/Contents/Resources/rck"
+install -m 755 "$BUILD_DIR/RightClickKitAgent" "$APP_DIR/Contents/Resources/RightClickKitAgent"
+install -m 755 "$BUILD_DIR/RightClickKitStorageView" "$APP_DIR/Contents/Resources/RightClickKitStorageView"
+install -m 755 "$BUILD_DIR/RightClickKitTreeView" "$APP_DIR/Contents/Resources/RightClickKitTreeView"
+if [[ -f "$CODEX_APP_ASAR" ]] && command -v npx >/dev/null 2>&1; then
+  (
+    cd "$APP_DIR/Contents/Resources"
+    npx --yes asar extract-file "$CODEX_APP_ASAR" "$FIREBALL_ASSET" >/dev/null 2>&1 || true
+  )
+fi
+install -m 644 "$REPO_ROOT/$DIMO_ASSET" "$APP_DIR/Contents/Resources/$DIMO_RESOURCE"
+install -m 644 "$REPO_ROOT/Sources/RightClickKitApp/Info.plist" "$APP_DIR/Contents/Info.plist"
+install -m 644 "$REPO_ROOT/assets/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
+printf 'APPL????' > "$APP_DIR/Contents/PkgInfo"
+
+install -m 755 "$BUILD_DIR/RightClickKitAgent" "$AGENT_APP_DIR/Contents/MacOS/RightClickKitAgent"
+install -m 644 "$REPO_ROOT/Sources/RightClickKitAgent/Info.plist" "$AGENT_APP_DIR/Contents/Info.plist"
+install -m 644 "$REPO_ROOT/assets/AppIcon.icns" "$AGENT_APP_DIR/Contents/Resources/AppIcon.icns"
+install -m 644 "$REPO_ROOT/$DIMO_ASSET" "$AGENT_APP_DIR/Contents/Resources/$DIMO_RESOURCE"
+if [[ -f "$APP_DIR/Contents/Resources/$FIREBALL_RESOURCE" ]]; then
+  install -m 644 "$APP_DIR/Contents/Resources/$FIREBALL_RESOURCE" "$AGENT_APP_DIR/Contents/Resources/$FIREBALL_RESOURCE"
+fi
+printf 'APPL????' > "$AGENT_APP_DIR/Contents/PkgInfo"
+
+install -m 755 "$BUILD_DIR/RightClickKitStorageView" "$STORAGE_APP_DIR/Contents/MacOS/RightClickKitStorageView"
+install -m 644 "$REPO_ROOT/Sources/RightClickKitStorageView/Info.plist" "$STORAGE_APP_DIR/Contents/Info.plist"
+install -m 644 "$REPO_ROOT/assets/AppIcon.icns" "$STORAGE_APP_DIR/Contents/Resources/AppIcon.icns"
+printf 'APPL????' > "$STORAGE_APP_DIR/Contents/PkgInfo"
+
+install -m 755 "$BUILD_DIR/RightClickKitTreeView" "$TREE_APP_DIR/Contents/MacOS/RightClickKitTreeView"
+install -m 644 "$REPO_ROOT/Sources/RightClickKitTreeView/Info.plist" "$TREE_APP_DIR/Contents/Info.plist"
+install -m 644 "$REPO_ROOT/assets/AppIcon.icns" "$TREE_APP_DIR/Contents/Resources/AppIcon.icns"
+printf 'APPL????' > "$TREE_APP_DIR/Contents/PkgInfo"
+
+codesign --force --deep --sign - "$AGENT_APP_DIR" >/dev/null 2>&1 || true
+codesign --force --deep --sign - "$STORAGE_APP_DIR" >/dev/null 2>&1 || true
+codesign --force --deep --sign - "$TREE_APP_DIR" >/dev/null 2>&1 || true
+codesign --force --deep --sign - "$APP_DIR" >/dev/null 2>&1 || true
+
+cat > "$DIST_DIR/ARTIFACT_README.txt" <<'TEXT'
+RightClickKit CI artifact
+=========================
+
+This is an unsigned preview build produced by GitHub Actions.
+
+- Open `RightClickKit.app` to inspect the native UI.
+- Use `rck` for CLI-side inspection or ad hoc local commands.
+- Finder workflow installation is still best done from a source checkout with
+  `./scripts/install.sh`, because the repository services are versioned in the
+  repo and are not embedded as a standalone distributable configuration here.
+
+If Gatekeeper blocks the app after download, remove quarantine attributes:
+
+  xattr -dr com.apple.quarantine RightClickKit.app
+TEXT
+
+(
+  cd "$DIST_DIR"
+  ditto -c -k --sequesterRsrc --keepParent "RightClickKit.app" "$(basename "$ZIP_PATH")"
+)
+
+echo "Packaged app: $APP_DIR"
+echo "Packaged CLI: $DIST_DIR/rck"
+echo "Zip artifact: $ZIP_PATH"
