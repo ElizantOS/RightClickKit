@@ -4,6 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SUPPORT_DIR="$HOME/.rightclickkit"
 BIN_DIR="$SUPPORT_DIR/bin"
+CLI_LINK_RECORD="$SUPPORT_DIR/cli-link.txt"
 APP_DIR="$HOME/Applications/RightClickKit.app"
 AGENT_APP_DIR="$APP_DIR/Contents/Helpers/RightClickKitAgent.app"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
@@ -15,6 +16,74 @@ FIREBALL_ASSET="webview/assets/fireball-spritesheet-v4-BtU8R9Qp.webp"
 FIREBALL_RESOURCE="fireball-spritesheet-v4-BtU8R9Qp.webp"
 DIMO_RESOURCE="rck-dimo-spritesheet.webp"
 DIMO_ASSET="assets/pets/rck-dimo/$DIMO_RESOURCE"
+
+path_contains() {
+  [[ ":$PATH:" == *":$1:"* ]]
+}
+
+cleanup_cli_link_record() {
+  if [[ -f "$CLI_LINK_RECORD" ]]; then
+    local recorded
+    recorded="$(<"$CLI_LINK_RECORD")"
+    if [[ -n "$recorded" && -L "$recorded" ]]; then
+      rm -f "$recorded"
+    fi
+    rm -f "$CLI_LINK_RECORD"
+  fi
+}
+
+find_cli_link_path() {
+  local preferred
+  for preferred in "$HOME/.local/bin" "$HOME/bin" "/opt/homebrew/bin" "/usr/local/bin"; do
+    if path_contains "$preferred"; then
+      mkdir -p "$preferred" 2>/dev/null || true
+      if [[ -d "$preferred" && -w "$preferred" ]]; then
+        printf '%s\n' "$preferred/rck"
+        return 0
+      fi
+    fi
+  done
+
+  local entry
+  for entry in "${(@s/:/)PATH}"; do
+    [[ -z "$entry" ]] && continue
+    [[ "$entry" == "$BIN_DIR" ]] && continue
+    case "$entry" in
+      "$HOME/.codex/"*|"$HOME/.antigravity/"*|"/Applications/"*|"/System/"*|"/usr/bin"|"/bin"|"/usr/sbin"|"/sbin")
+        continue
+        ;;
+    esac
+    if [[ "$entry" == "$HOME/"* ]]; then
+      mkdir -p "$entry" 2>/dev/null || true
+    fi
+    if [[ -d "$entry" && -w "$entry" ]]; then
+      printf '%s\n' "$entry/rck"
+      return 0
+    fi
+  done
+  return 1
+}
+
+install_cli_link() {
+  cleanup_cli_link_record
+
+  local link_path
+  link_path="$(find_cli_link_path || true)"
+  if [[ -z "$link_path" ]]; then
+    echo "Shell command: add $BIN_DIR to PATH to run 'rck' directly"
+    return
+  fi
+
+  if [[ -e "$link_path" && ! -L "$link_path" ]]; then
+    echo "Shell command skipped: $link_path already exists"
+    echo "Direct CLI: $BIN_DIR/rck"
+    return
+  fi
+
+  ln -sfn "$BIN_DIR/rck" "$link_path"
+  printf '%s\n' "$link_path" > "$CLI_LINK_RECORD"
+  echo "Shell command: $link_path"
+}
 
 mkdir -p "$BIN_DIR" "$LAUNCH_AGENTS_DIR" "$HOME/Library/Logs/RightClickKit" "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 mkdir -p "$AGENT_APP_DIR/Contents/MacOS" "$AGENT_APP_DIR/Contents/Resources"
@@ -36,6 +105,7 @@ install -m 755 "$BUILD_DIR/rck" "$BIN_DIR/rck"
 install -m 755 "$BUILD_DIR/RightClickKitAgent" "$BIN_DIR/RightClickKitAgent"
 install -m 755 "$BUILD_DIR/RightClickKitStorageView" "$BIN_DIR/RightClickKitStorageView"
 install -m 755 "$BUILD_DIR/RightClickKitTreeView" "$BIN_DIR/RightClickKitTreeView"
+install_cli_link
 install -m 755 "$BUILD_DIR/RightClickKitApp" "$APP_DIR/Contents/MacOS/RightClickKitApp"
 install -m 755 "$BUILD_DIR/rck" "$APP_DIR/Contents/Resources/rck"
 install -m 755 "$BUILD_DIR/RightClickKitAgent" "$APP_DIR/Contents/Resources/RightClickKitAgent"

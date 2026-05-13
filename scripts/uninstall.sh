@@ -3,8 +3,27 @@ set -euo pipefail
 
 SUPPORT_DIR="$HOME/.rightclickkit"
 BIN_DIR="$SUPPORT_DIR/bin"
+CLI_LINK_RECORD="$SUPPORT_DIR/cli-link.txt"
 APP_DIR="$HOME/Applications/RightClickKit.app"
 RCK="$BIN_DIR/rck"
+
+cleanup_cli_link() {
+  if [[ -f "$CLI_LINK_RECORD" ]]; then
+    local recorded
+    recorded="$(<"$CLI_LINK_RECORD")"
+    if [[ -n "$recorded" && -L "$recorded" ]]; then
+      rm -f "$recorded"
+    fi
+    rm -f "$CLI_LINK_RECORD"
+  fi
+
+  local candidate
+  for candidate in "$HOME/.local/bin/rck" "$HOME/bin/rck" "/opt/homebrew/bin/rck" "/usr/local/bin/rck"; do
+    if [[ -L "$candidate" ]] && [[ "$(readlink "$candidate")" == "$BIN_DIR/rck" ]]; then
+      rm -f "$candidate"
+    fi
+  done
+}
 
 if [[ -x "$RCK" ]]; then
   "$RCK" uninstall || true
@@ -23,6 +42,7 @@ fi
 
 rm -rf "$APP_DIR"
 rm -f "$BIN_DIR/rck"
+cleanup_cli_link
 
 echo "RightClickKit uninstalled."
 echo "Logs are kept in: $HOME/Library/Logs/RightClickKit"

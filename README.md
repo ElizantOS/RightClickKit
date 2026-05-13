@@ -48,6 +48,7 @@ Install from a source checkout:
 This builds the Swift package and installs:
 
 - CLI: `~/.rightclickkit/bin/rck`
+- Shell command shim: `rck` via a symlink in a writable `PATH` directory when available
 - App: `~/Applications/RightClickKit.app`
 - Agent helper: `~/Applications/RightClickKit.app/Contents/Helpers/RightClickKitAgent.app`
 - Login Agent: `~/Library/LaunchAgents/com.elizantos.RightClickKit.agent.plist`
