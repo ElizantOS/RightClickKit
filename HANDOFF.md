@@ -1,221 +1,165 @@
 # RightClickKit Handoff
 
-Last updated: 2026-05-08
+Last updated: 2026-05-13
 
-## Project Location
-
-The active source repository has been migrated to:
+## Active Repository
 
 ```text
 /Users/echo/projects/RightClickKit
 ```
 
-The original Codex working copy was:
+Older Codex working copies are reference-only. Continue development in the
+project path above.
+
+## Product Shape
+
+RightClickKit is a native macOS productivity toolkit for right-click actions,
+local file insight, and a small always-available Agent.
+
+Current pillars:
+
+- Finder Quick Action configuration and installation.
+- Native Directory Tree viewer.
+- Native Storage Analysis viewer.
+- Menu bar Agent with activity, notifications, and companion pet.
+- Local project skills under `.agent/skills/` so future features can reuse
+  known implementation patterns.
+
+Important product stance:
 
 ```text
-/Users/echo/Documents/Codex/2026-04-30/automator-macos-vscode-finder-quick-action
+Configure intent in a native UI. Keep shell, YAML, Automator, and scanner
+mechanics behind the curtain unless the user opens Advanced surfaces.
 ```
 
-That older directory is now only a backup/reference copy. Continue development in
-`~/projects/RightClickKit`.
+## Architecture
 
-## What RightClickKit Is
+This is a pure SwiftPM macOS package. There is no Xcode project.
 
-RightClickKit is a personal macOS utility for managing Finder right-click Quick
-Actions without manually building Automator workflows.
+Products:
 
-The product goal changed during development:
+- `RightClickKitCore`: shared models, paths, workflow install, script generation,
+  activity store, report helpers.
+- `rck`: CLI entrypoint for install/run/report/notify/pet commands.
+- `RightClickKitApp`: main SwiftUI configuration app.
+- `RightClickKitAgent`: accessory process with real `NSStatusItem`, activity
+  notifications, and floating pet.
+- `RightClickKitStorageView`: native storage analyzer helper.
+- `RightClickKitTreeView`: native directory tree helper.
 
-1. Initial goal: make "right-click -> Open in VSCode/Cursor" stable.
-2. Broader goal: create a self-use app for managing many Finder right-click
-   shortcuts.
-3. Current product direction: a "Finder right-click action configurator", not a
-   script editor.
+Important folders:
 
-The preferred user story is:
+- `Sources/RightClickKitCore/`: shared core logic.
+- `Sources/rck/`: CLI.
+- `Sources/RightClickKitApp/`: main app.
+- `Sources/RightClickKitAgent/`: status bar, activity popover, pet overlay,
+  notification bridges.
+- `Sources/RightClickKitStorageView/`: progressive storage scanning UI.
+- `Sources/RightClickKitTreeView/`: directory tree UI.
+- `services/`: versioned right-click action definitions.
+- `assets/`: app icon and bundled pet assets.
+- `.agent/skills/`: project-local skills for future RightClickKit work.
+- `scripts/`: install, preview, uninstall, smoke test.
 
-```text
-Choose action type -> choose app/fill simple options -> save -> install
-```
+## Runtime Flows
 
-YAML, generated shell, and logs exist, but they should be secondary/advanced
-surfaces. The user should not need to understand `$@`, shell quoting, bundle IDs,
-or Automator internals for common actions.
+### Finder Actions
 
-## Current Architecture
-
-The project is a pure SwiftPM macOS package. There is no Xcode project.
-
-`Package.swift` defines three products:
-
-- `RightClickKitCore`: shared core library.
-- `rck`: CLI helper.
-- `RightClickKitApp`: SwiftUI/AppKit macOS app executable.
-
-Important source directories:
-
-- `Sources/RightClickKitCore/`: service models, YAML codec, workflow installer,
-  runner, paths, process helpers, script generation.
-- `Sources/rck/`: command line entrypoint.
-- `Sources/RightClickKitApp/`: SwiftUI app and GUI state.
-- `services/`: versioned source of right-click actions.
-- `scripts/`: install, uninstall, preview-app, smoke-test scripts.
-
-## Runtime Flow
-
-Finder does not run service business logic directly. Installed workflows are thin
-launchers:
+Finder workflows are thin launchers:
 
 ```text
 Finder Quick Action -> generated .workflow -> ~/.rightclickkit/bin/rck run <service-id> "$@"
 ```
 
-`rck run` then:
+`rck run` loads service source, resolves Finder paths, writes an
+`RCK_ITEMS_FILE`, chooses a working directory, injects environment variables,
+runs the generated action script, and writes logs.
 
-- loads the service from the configured repository,
-- accepts Finder-passed paths,
-- falls back to Finder selection if no paths arrived,
-- writes a temporary newline-delimited `RCK_ITEMS_FILE`,
-- chooses a working directory:
-  - selected folder -> that folder,
-  - selected file -> its parent folder,
-  - no item -> repository root,
-- injects environment variables,
-- executes the service script,
-- writes logs.
+### Native Reports
 
-Environment given to service scripts:
+```text
+rck report directory-tree /path
+rck report storage-analysis /path
+```
 
-- `"$@"`: selected Finder paths.
-- `RCK_SERVICE_ID`: current action ID.
-- `RCK_ITEMS_FILE`: temp file containing one path per line.
-- `RCK_HELPER`: configured `rck` helper path.
-- `RCK_REPOSITORY_ROOT`: configured repository root.
-- `PATH`: extended with `/usr/local/bin` and `/opt/homebrew/bin`.
+Without `--no-open`, the CLI launches the native helper app. With `--no-open`,
+it writes local report data.
 
-Logs:
+### Agent
 
-- `~/Library/Logs/RightClickKit/<service-id>.log`
-- `~/Library/Logs/RightClickKit/<service-id>.launcher.log`
+The Agent is installed as:
 
-## Files To Know
+```text
+~/Applications/RightClickKit.app/Contents/Helpers/RightClickKitAgent.app
+~/Library/LaunchAgents/com.elizantos.RightClickKit.agent.plist
+```
 
-Core:
+Stability decisions:
 
-- `Sources/RightClickKitCore/Models.swift`
-  - `ServiceDefinition`
-  - `ServiceMode`
-  - `ActionType`
-  - `ActionConfig`
-  - `CopyPathsFormat`
-- `Sources/RightClickKitCore/YAMLServiceCodec.swift`
-  - Lightweight YAML load/dump for the project-owned v1 format.
-  - Backwards-compatible with old raw script services.
-- `Sources/RightClickKitCore/ActionScriptGenerator.swift`
-  - Generates `action.zsh` from `ActionConfig`.
-- `Sources/RightClickKitCore/WorkflowInstaller.swift`
-  - Generates and removes Finder `.workflow` bundles.
-  - Only deletes workflows with `RightClickKitManaged=true`.
-- `Sources/RightClickKitCore/ServiceRunner.swift`
-  - Executes actions and records logs.
-- `Sources/RightClickKitCore/ServiceStore.swift`
-  - Loads services.
-  - Saves YAML/script.
-  - Materializes generated scripts before CLI installs.
-- `Sources/RightClickKitCore/Paths.swift`
-  - Central path policy.
+- Use AppKit `NSStatusItem` as the single system status-bar entry.
+- Do not create fake floating status-bar pills or RK/RK1 overlays.
+- The pet is a companion/reminder layer, not a second control center.
+- Experimental macOS/DingTalk notification bridges stay disabled unless a user
+  explicitly enables them.
+- `ActivityStore` remains the shared message lane for `rck notify`, Finder
+  action status, and Agent UI.
 
-CLI:
+### Pets
 
-- `Sources/rck/main.swift`
-  - `install`, `uninstall`, `list`, `run`, `logs`, `config`.
+Default built-in pet: `rck-dimo`.
 
-App:
+Alternate built-in pet: `fireball`.
 
-- `Sources/RightClickKitApp/RightClickKitApp.swift`
-  - Manual AppKit `NSApplication` entrypoint wrapping SwiftUI.
-  - This was used because plain SwiftPM executables are not automatically native
-    `.app` bundles.
-- `Sources/RightClickKitApp/ContentView.swift`
-  - `NavigationSplitView`, sidebar, detail, bottom toolbar.
-- `Sources/RightClickKitApp/ActionBuilderView.swift`
-  - Main action configuration surface.
-- `Sources/RightClickKitApp/AppPickerView.swift`
-  - Installed app picker.
-- `Sources/RightClickKitApp/Panels.swift`
-  - Logs and Advanced panels.
-- `Sources/RightClickKitApp/AppModel.swift`
-  - App state, saving, install/uninstall, logs, helper repair.
-- `Sources/RightClickKitApp/EditableAction.swift`
-  - UI-editable wrapper around `ServiceDefinition`.
-- `Sources/RightClickKitApp/InstalledAppCatalog.swift`
-  - Scans `/Applications` and `~/Applications`.
-- `Sources/RightClickKitApp/HighlightedTextEditor.swift`
-  - Simple AppKit-backed code highlighting for shell/YAML.
+User pets:
 
-Scripts:
+```text
+~/.rightclickkit/pets/<pet-id>/
+  pet.json
+  spritesheet.webp
+```
 
-- `scripts/install.sh`
-  - Builds release.
-  - Installs CLI to `~/.rightclickkit/bin/rck`.
-  - Builds app bundle at `~/Applications/RightClickKit.app`.
-  - Installs enabled workflows.
-- `scripts/uninstall.sh`
-  - Removes managed workflows.
-  - Removes installed app and CLI.
-  - Keeps logs and service source.
-- `scripts/preview-app.sh`
-  - Builds a preview bundle at `~/Applications/RightClickKitPreview.app`.
-  - Copies bundled `rck` into app resources.
-  - Writes repository-root config.
-- `scripts/smoke-test.sh`
-  - Builds package.
-  - Uses temp `RIGHTCLICKKIT_HOME`.
-  - Installs and uninstalls workflow.
-  - Verifies generated plist/wflow files and managed marker.
+Selected pet:
+
+```text
+~/.rightclickkit/current-pet.txt
+```
+
+If selection is empty or set to `default`, the Agent uses bundled `rck-dimo`.
+`rck pet use fireball` explicitly selects Fireball.
+
+Bundled pet resource:
+
+```text
+assets/pets/rck-dimo/rck-dimo-spritesheet.webp
+```
+
+`scripts/install.sh` and `scripts/preview-app.sh` copy bundled pet resources into
+both the main app Resources and Agent helper Resources.
+
+## CLI Reference
+
+```bash
+rck install [--repo PATH] [--rck PATH]
+rck uninstall
+rck list [--repo PATH]
+rck run <service-id> [paths...]
+rck logs [service-id]
+rck report <directory-tree|storage-analysis> [--no-open] [paths...]
+rck action run <action-id> [paths...]
+rck notify <title> [--body TEXT] [--level info|success|warning|danger] [--status running|waiting|review|failed|done] [--source NAME] [--id ID]
+rck notify list|read|clear
+rck pet list|current|use <id|rck-dimo|fireball|default>|install <pet-folder>
+rck config
+```
 
 ## Service Format
 
-Services live under:
-
-```text
-services/<service-id>/service.yaml
-services/<service-id>/action.zsh
-```
-
-Current built-in services:
+Current services:
 
 ```text
 services/analyze-storage/
 services/open-in-code/
 services/show-directory-tree/
-```
-
-`Analyze Storage` opens a native macOS storage analysis window immediately and
-scans in the background. The completed view shows a dark radial storage map,
-top-level usage bars, and file/folder counts. `--no-open` still generates local
-JSON data. `Show Directory Tree` still generates a plain text tree report.
-
-Current YAML model:
-
-```yaml
-id: open-in-code
-title: Open in Code
-description: Open selected files or folders in the code-compatible editor.
-accepts: [file, folder]
-shell: /bin/zsh
-script: action.zsh
-enabled: true
-confirm: false
-mode: action
-action:
-  type: openWithCodeEditor
-  appName: Cursor
-  bundleID:
-  codeCommand: /usr/local/bin/code
-  terminalApp: Terminal
-  command: "pwd && ls -la"
-  pathFormat: lines
 ```
 
 Supported action types:
@@ -228,228 +172,99 @@ Supported action types:
 - `showDirectoryTree`
 - `analyzeStorage`
 
-Backwards compatibility:
+Old services without `mode`/`action` load as `rawScript`.
 
-- Services without `mode`/`action` load as `rawScript`.
-- Raw script mode keeps the script editable in Advanced.
+## Project Skills
 
-## Development Timeline
+Project-local skills are part of the architecture.
 
-### 1. Finder Quick Action Prototype
+- `.agent/skills/rightclickkit-action/`: action architecture, right-click
+  extension patterns, service semantics.
+- `.agent/skills/rightclickkit-pet/`: pet creation, hatch-pet integration,
+  bundled/default pet rules, and RCK Dimo lessons.
 
-The first practical target was "right-click a folder and open it in VS Code or
-Cursor." The initial Automator/XML attempt had a bug where Finder did not pass
-paths as expected, so opening worked only after fixing the workflow to pass
-Finder paths correctly.
+Use these before implementing similar features. They capture the local
+conventions better than the general-purpose skills alone.
 
-Important lessons:
+## Validation
 
-- `code .` worked from a shell, so the code editor itself was not the problem.
-- Finder service input and shell argument passing were the risky part.
-- The final stable pattern was to route through a helper and log both launcher
-  and service behavior.
-
-### 2. RightClickKit Concept
-
-After the first action worked, the scope expanded into a personal app for
-managing many Finder right-click shortcuts.
-
-Product assumptions:
-
-- Current-user install only.
-- No sudo required for normal operation.
-- Service source is versioned in GitHub under `services/`.
-- Installed workflows go to `~/Library/Services`.
-- Uninstall must only remove RightClickKit-managed workflows.
-- Logs must remain available after uninstall.
-
-### 3. SwiftPM App + CLI Foundation
-
-Swift was chosen over Go/Rust for first version because:
-
-- Native SwiftUI app is easier for macOS-only UX.
-- Swift can generate workflows, run subprocesses, and bridge to AppKit when
-  needed.
-- SwiftPM is enough for this personal app; no Xcode project is required.
-
-The first implementation created:
-
-- core service model,
-- YAML loader,
-- workflow installer,
-- service runner,
-- CLI commands,
-- preview app bundle script,
-- installer/uninstaller scripts.
-
-### 4. Logging And Debugging Improvements
-
-Finder Quick Actions are hard to debug because failures can be silent. The app
-now writes two logs:
-
-- launcher log: generated workflow started, paths received, helper existence,
-  exit status.
-- service log: actual script run, items, script output, exit status.
-
-This fixed the earlier "报错了，但是没有日志" problem.
-
-### 5. Script Editor Rejected
-
-An early GUI showed templates and script editing too prominently. The user
-correctly pushed back: even with templates, it still required understanding
-which shell lines to edit and which lines to leave alone.
-
-Product decision:
-
-- Default UI should not be a script editor.
-- Advanced users may still edit raw scripts, but normal users should configure
-  an action by selecting an app/type/options.
-
-### 6. Action Builder Refactor
-
-The UI was refactored around action configuration:
-
-- sidebar renamed to "Right-click Actions",
-- detail page centers on Configure,
-- action type picker added,
-- AppPicker scans installed apps,
-- generated script and YAML moved into Advanced,
-- logs moved into a collapsible panel,
-- raw script mode kept but hidden behind a toggle.
-
-The core model gained:
-
-- `ServiceMode`
-- `ActionType`
-- `ActionConfig`
-- `CopyPathsFormat`
-- `ServiceStatus`
-- `ActionScriptGenerator`
-
-The CLI install path was also improved so action services can materialize their
-generated scripts before workflow install.
-
-## Current Validation Status
-
-Known validation commands:
+Run from `/Users/echo/projects/RightClickKit`:
 
 ```bash
+swift build --disable-sandbox --disable-build-manifest-caching --cache-path .build/cache --scratch-path .build/swiftpm
 ./scripts/smoke-test.sh
-swift build --disable-sandbox --disable-build-manifest-caching --cache-path .build/cache --scratch-path .build/swiftpm -c release
-swift run --disable-sandbox --disable-build-manifest-caching --cache-path .build/cache --scratch-path .build/swiftpm rck list --repo "$PWD"
+./scripts/install.sh
 ```
 
-Previous known status before migration:
+Useful runtime checks:
 
-- smoke test passed,
-- release build passed,
-- `Open in Code` Finder action worked manually after fixing Finder path passing.
-
-After migration, run the validation commands again from:
-
-```text
-/Users/echo/projects/RightClickKit
+```bash
+~/.rightclickkit/bin/rck pet current
+~/.rightclickkit/bin/rck pet list
+pgrep -fl RightClickKitAgent
+ls -lh ~/Applications/RightClickKit.app/Contents/Helpers/RightClickKitAgent.app/Contents/Resources/rck-dimo-spritesheet.webp
 ```
+
+Known latest validation:
+
+- `swift build --disable-sandbox --disable-build-manifest-caching --cache-path .build/cache --scratch-path .build/swiftpm` passed.
+- `./scripts/smoke-test.sh` passed.
+- `./scripts/install.sh` passed.
+- `rck pet use default`, `rck pet current`, and `rck pet list` verified
+  `rck-dimo` as current default.
+- Agent process restarted and is running.
 
 ## Known Limitations
 
-- `swift test` is not currently useful because there are no test targets yet.
-- YAML parsing is deliberately lightweight and handles the project-owned v1
-  format, not full YAML.
-- The app can edit existing actions, but the "New Action" flow still needs to be
-  made first-class.
-- `AppPickerView` is basic:
-  - scans `/Applications` and `~/Applications`,
-  - shows installed apps,
-  - fills app name and bundle ID,
-  - still needs better search/favorites and clearer manual override behavior.
-- `openTerminalHere` currently uses `open -a <terminal> "$PWD"`.
-  - This is okay for Terminal-style apps but may need app-specific AppleScript
-    for iTerm/Warp polish.
-- `copyPaths` JSON generation is shell-based and should get focused tests for
-  quotes, newlines, and backslashes.
-- GUI status currently distinguishes installed/not installed/error, but
-  "modified" is UI-local and not a content hash comparison with installed
-  workflows.
+- `swift test` is still not useful because there are no test targets.
+- YAML parsing is deliberately lightweight and handles the project-owned format,
+  not general YAML.
 - The app is not signed/notarized for distribution.
-- The app is packaged by shell scripts, not a DMG/pkg.
+- Packaging is shell-script based, not DMG/pkg.
+- `ffmpeg` is not guaranteed on local machines; hatch-pet can produce validated
+  spritesheets and contact sheets even when mp4 preview rendering fails.
+- Experimental global notification ingestion is private/fragile and should stay
+  opt-in only.
+- Pet states exist, but Agent behavior still needs a proper state/mood mapper so
+  `waiting`, `review`, `failed`, `jumping`, and directional running are used
+  consistently.
 
 ## Recommended Next Steps
 
 High priority:
 
-1. Add a real "New Action" flow in the sidebar toolbar.
-2. Redesign Configure forms to be even more choice-driven:
-   - app action: one big "Choose App" control, hide bundle ID behind "Manual".
-   - code editor: preset buttons for Cursor, VS Code, custom command.
-   - terminal: preset buttons for Terminal, iTerm, Warp.
-   - copy paths: segmented format picker only.
-   - run command: one command field plus clear working-directory note.
-3. Add a "Test With..." flow that lets the user pick a folder/file rather than
-   relying only on Finder selection fallback.
-4. Surface last failure summary above Logs, not only inside raw log text.
-5. Add narrow unit tests for:
-   - YAML load/dump compatibility,
-   - script generation,
-   - managed workflow detection,
-   - service store materialization.
+1. Add `PetMoodController` to map ActivityStore, background tasks, unread count,
+   permission state, and pointer/drag state to pet animation rows.
+2. Add tests for `rck pet` built-in/default/user-installed behavior.
+3. Keep improving Tree and Storage responsiveness with explicit progress and
+   cancellation controls.
+4. Add a first-class "New Action" flow in the main app.
+5. Surface concise failure summaries above logs instead of requiring log reading.
 
 Medium priority:
 
-1. Add app search to `AppPickerView`.
-2. Add action presets.
-3. Improve `openTerminalHere` for iTerm/Warp.
-4. Add import/export action commands to CLI.
-5. Add `rck status` to compare source services with installed workflows.
-6. Add `Remove all data` uninstall option, but keep default uninstall safe.
+1. Add app search/favorites to app picking.
+2. Add action presets for common apps and terminals.
+3. Add `rck status` to compare source services with installed workflows.
+4. Add import/export action commands.
+5. Add CI coverage for script generation and workflow plist generation.
 
 Low priority:
 
-1. Create an app icon.
-2. Add signed/notarized packaging.
-3. Add GitHub release automation.
-4. Consider a menu bar helper if frequent reinstall/test actions become useful.
+1. Signed/notarized packaging.
+2. Release automation.
+3. Optional LaunchAgent/Login Item management UI.
 
-## Product Design Notes
+## Git Hygiene
 
-The guiding product rule is:
-
-```text
-The user configures intent, RightClickKit writes shell.
-```
-
-Good UI defaults:
-
-- Keep shell hidden.
-- Prefer pickers, preset buttons, and segmented controls.
-- Manual fields should be secondary.
-- Bundle ID should be auto-filled, not asked first.
-- Logs should answer "what failed and what should I do next?"
-- Install/uninstall should be reversible and obviously safe.
-
-Avoid regressing into:
-
-- a YAML editor,
-- a general shell IDE,
-- an Automator clone,
-- a marketplace before the one-person flow is excellent.
-
-## Git Notes
-
-This project was migrated from a temporary Codex workspace into
-`~/projects/RightClickKit` and should be committed there. The initial commit
-should include:
-
-- source files,
-- service definitions,
-- install/uninstall scripts,
-- README,
-- this handoff.
+Commit source, service definitions, assets, skills, scripts, and documentation.
 
 Do not commit:
 
-- `.build/`,
-- local app bundles,
-- `~/.rightclickkit`,
-- logs,
-- generated user workflows from `~/Library/Services`.
+- `.build/`
+- `.codex/`
+- `tmp/`
+- local `.app` bundles
+- `~/.rightclickkit`
+- logs
+- generated workflows from `~/Library/Services`

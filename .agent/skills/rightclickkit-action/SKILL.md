@@ -100,10 +100,10 @@ owning the work itself.
 - Track overlay actions such as open, close, drag, click, notification open,
   dismiss, and reply separately from the underlying task execution.
 
-For RightClickKit, this maps well to a future native status companion: show scan
-and agent state in a separate menu-bar or floating assistant surface, but keep
-execution in `rck`, `RightClickKitCore`, and helper apps. The companion should
-make background work visible, never become the source of truth.
+For RightClickKit, this maps to the current native Agent: show scan, action, and
+notification state through a real menu-bar item plus the floating companion, but
+keep execution in `rck`, `RightClickKitCore`, and helper apps. The companion
+should make background work visible, never become the source of truth.
 
 ## Menu Bar And Companion Agent
 
@@ -121,9 +121,8 @@ or one-shot helper windows.
   toggle companion, open logs, quit.
 - Use a borderless non-activating `NSPanel` for the companion so it can float,
   join all spaces, and stay separate from normal document windows.
-- Start with a SwiftUI fallback sprite, but keep the renderer compatible with
-  the Codex pet atlas contract so a generated `spritesheet.webp` can replace the
-  fallback later.
+- Keep the renderer compatible with the Codex pet atlas contract. The bundled
+  default is `rck-dimo`; Fireball is an explicit alternate/fallback.
 
 Future work should add a shared status store or notification bus before wiring
 real scan/agent progress into the companion. Do not make the overlay poll heavy

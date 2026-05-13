@@ -1,8 +1,36 @@
 # RightClickKit
 
-RightClickKit is a personal macOS tool for managing Finder right-click Quick Actions from versioned action files.
+RightClickKit is a native macOS toolkit for building personal productivity
+actions around right-click workflows, local scans, and a small status-bar agent.
 
-The app is intentionally built for one-person use: keep actions in GitHub, edit them in a small SwiftUI app, and install/uninstall Finder workflows without touching Automator by hand. The first built-in action is `Open in Code`, based on the Finder workflow already tested locally.
+The project started as a Finder Quick Action manager, then grew into a local
+companion app:
+
+- manage Finder right-click actions from versioned service files;
+- open native Directory Tree and Storage Analysis windows;
+- keep a menu bar Agent alive for notifications, activity, and the companion pet;
+- let local AI/Codex workflows create or switch pet assets through skills.
+
+The guiding product rule is:
+
+```text
+The user configures intent, RightClickKit writes and runs the machinery.
+```
+
+## What Is Included
+
+- `RightClickKitApp`: main SwiftUI configuration app.
+- `RightClickKitAgent`: accessory Agent with real `NSStatusItem`, activity
+  notifications, and the floating companion pet.
+- `RightClickKitStorageView`: native storage analyzer with progressive scanning
+  and a growing sunburst/rose chart.
+- `RightClickKitTreeView`: native directory tree viewer with fast tree text,
+  outline navigation, inspector, and export flows.
+- `rck`: CLI helper used by Finder workflows, reports, notifications, and pet
+  management.
+
+The default bundled pet is `rck-dimo`, a Dimo-inspired RightClickKit companion.
+Fireball remains available as an alternate built-in pet.
 
 ## Install
 
@@ -10,39 +38,27 @@ The app is intentionally built for one-person use: keep actions in GitHub, edit 
 ./scripts/install.sh
 ```
 
-This builds the Swift package, installs:
+This builds the Swift package and installs:
 
 - CLI: `~/.rightclickkit/bin/rck`
 - App: `~/Applications/RightClickKit.app`
+- Agent helper: `~/Applications/RightClickKit.app/Contents/Helpers/RightClickKitAgent.app`
+- Login Agent: `~/Library/LaunchAgents/com.elizantos.RightClickKit.agent.plist`
 - Finder workflows: `~/Library/Services/*.workflow`
 
 Then use Finder:
 
 ```text
 Right-click a file or folder -> Quick Actions/Services -> Open in Code
-Right-click a file or folder -> Quick Actions/Services -> Show Directory Tree
-Right-click a file or folder -> Quick Actions/Services -> Analyze Storage
+Right-click a folder -> Quick Actions/Services -> Show Directory Tree
+Right-click a folder -> Quick Actions/Services -> Analyze Storage
 ```
 
-You can also launch the app:
+You can also launch the app directly:
 
 ```bash
 open ~/Applications/RightClickKit.app
 ```
-
-## Uninstall
-
-```bash
-./scripts/uninstall.sh
-```
-
-The uninstaller removes only workflows marked with:
-
-```text
-RightClickKitManaged = true
-```
-
-It keeps your repository files and logs.
 
 ## CLI
 
@@ -54,42 +70,26 @@ It keeps your repository files and logs.
 ~/.rightclickkit/bin/rck logs open-in-code
 ~/.rightclickkit/bin/rck report directory-tree [--no-open] /path/to/folder
 ~/.rightclickkit/bin/rck report storage-analysis [--no-open] /path/to/folder
+~/.rightclickkit/bin/rck notify "Build done" --status done --level success
+~/.rightclickkit/bin/rck notify list
+~/.rightclickkit/bin/rck pet list
+~/.rightclickkit/bin/rck pet use default
+~/.rightclickkit/bin/rck pet use fireball
+~/.rightclickkit/bin/rck pet install /absolute/path/to/pet-folder
 ```
 
-`storage-analysis` opens the native Storage Analysis window immediately and scans
-in the background. With `--no-open`, it writes local JSON data instead.
-`directory-tree` opens the native Directory Tree window with an outline,
-structure map, inspector, search, and markdown export. With `--no-open`, it
-writes the older text report instead.
+`storage-analysis` opens the native Storage Analysis window immediately and
+scans in the background. `directory-tree` opens the native Directory Tree window.
+With `--no-open`, both commands write local report data instead of launching UI.
 
-## Service Format
+## Services
 
-Each service has a `service.yaml`:
+Services live under:
 
-```yaml
-id: open-in-code
-title: Open in Code
-description: Open selected files or folders in the code-compatible editor.
-accepts: [file, folder]
-shell: /bin/zsh
-script: action.zsh
-enabled: true
-confirm: false
-mode: action
-action:
-  type: openWithCodeEditor
-  appName: Cursor
-  bundleID:
-  codeCommand: /usr/local/bin/code
-  terminalApp: Terminal
-  command: "pwd && ls -la"
-  pathFormat: lines
+```text
+services/<service-id>/service.yaml
+services/<service-id>/action.zsh
 ```
-
-And an executable script, usually `action.zsh`.
-
-For normal use, edit actions through the app instead of editing shell. The
-configured action writes the YAML and regenerates `action.zsh` automatically.
 
 Supported action types:
 
@@ -101,24 +101,50 @@ Supported action types:
 - `showDirectoryTree`
 - `analyzeStorage`
 
-Old services without `mode`/`action` are still loaded as `rawScript`.
+Old services without `mode`/`action` still load as `rawScript`.
 
-At runtime, scripts receive:
+At runtime, generated workflows call:
+
+```text
+Finder Quick Action -> generated .workflow -> ~/.rightclickkit/bin/rck run <service-id> "$@"
+```
+
+Scripts receive:
 
 - `"$@"`: selected Finder paths
 - `RCK_SERVICE_ID`: the service id
-- `RCK_ITEMS_FILE`: a newline-delimited file of selected paths
+- `RCK_ITEMS_FILE`: newline-delimited selected paths
 - `RCK_HELPER`: the `rck` helper executable path
-- `RCK_REPOSITORY_ROOT`: the configured RightClickKit repository root
+- `RCK_REPOSITORY_ROOT`: configured repository root
 
-The working directory is the selected folder, or the parent folder of the first selected file.
+## Pets
+
+RightClickKit pets use the Codex/hatch-pet atlas contract:
+
+- `1536x1872` WebP atlas
+- 8 columns x 9 rows
+- 192 x 208 px cells
+- transparent background
+
+User-installed pets live under:
+
+```text
+~/.rightclickkit/pets/<pet-id>/
+  pet.json
+  spritesheet.webp
+```
+
+Bundled pets live under `assets/pets/` and are copied into both the main app and
+Agent helper bundles during install. Use `.agent/skills/rightclickkit-pet/` when
+creating or promoting pet assets so the `hatch-pet` and `$imagegen` workflow
+stays consistent.
 
 ## Development
 
 ```bash
+swift build --disable-sandbox --disable-build-manifest-caching --cache-path .build/cache --scratch-path .build/swiftpm
 ./scripts/smoke-test.sh
-swift run rck list --repo "$PWD"
-swift run RightClickKitApp
+./scripts/install.sh
 ```
 
 Logs are written to:
@@ -126,9 +152,13 @@ Logs are written to:
 ```text
 ~/Library/Logs/RightClickKit/<service-id>.log
 ~/Library/Logs/RightClickKit/<service-id>.launcher.log
+~/Library/Logs/RightClickKit/agent-launchd.out.log
+~/Library/Logs/RightClickKit/agent-launchd.err.log
 ```
 
-## Project Notes
+## More Notes
 
-See `HANDOFF.md` for the detailed development history, architecture decisions,
-known limitations, and next steps.
+- `HANDOFF.md`: current architecture, runtime flows, and next steps.
+- `STORAGE_ANALYSIS_EXPERIENCE.md`: storage/tree performance lessons.
+- `RIGHTCLICKKIT_EXPERIENCE.md`: project-wide implementation lessons,
+  including Agent, pet, image generation, and skill workflow notes.

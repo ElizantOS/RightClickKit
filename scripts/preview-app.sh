@@ -10,6 +10,8 @@ SUPPORT_DIR="$HOME/.rightclickkit"
 CODEX_APP_ASAR="/Applications/Codex.app/Contents/Resources/app.asar"
 FIREBALL_ASSET="webview/assets/fireball-spritesheet-v4-BtU8R9Qp.webp"
 FIREBALL_RESOURCE="fireball-spritesheet-v4-BtU8R9Qp.webp"
+DIMO_RESOURCE="rck-dimo-spritesheet.webp"
+DIMO_ASSET="assets/pets/rck-dimo/$DIMO_RESOURCE"
 
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 mkdir -p "$AGENT_APP_DIR/Contents/MacOS" "$AGENT_APP_DIR/Contents/Resources"
@@ -37,6 +39,7 @@ if [[ -f "$CODEX_APP_ASAR" ]] && command -v npx >/dev/null 2>&1; then
     npx --yes asar extract-file "$CODEX_APP_ASAR" "$FIREBALL_ASSET" >/dev/null 2>&1 || true
   )
 fi
+install -m 644 "$REPO_ROOT/$DIMO_ASSET" "$APP_DIR/Contents/Resources/$DIMO_RESOURCE"
 install -m 644 "$REPO_ROOT/Sources/RightClickKitApp/Info.plist" "$APP_DIR/Contents/Info.plist"
 install -m 644 "$REPO_ROOT/assets/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
 printf '%s\n' "$REPO_ROOT" > "$APP_DIR/Contents/Resources/repository-root.txt"
@@ -44,6 +47,7 @@ printf 'APPL????' > "$APP_DIR/Contents/PkgInfo"
 install -m 755 "$BUILD_DIR/RightClickKitAgent" "$AGENT_APP_DIR/Contents/MacOS/RightClickKitAgent"
 install -m 644 "$REPO_ROOT/Sources/RightClickKitAgent/Info.plist" "$AGENT_APP_DIR/Contents/Info.plist"
 install -m 644 "$REPO_ROOT/assets/AppIcon.icns" "$AGENT_APP_DIR/Contents/Resources/AppIcon.icns"
+install -m 644 "$REPO_ROOT/$DIMO_ASSET" "$AGENT_APP_DIR/Contents/Resources/$DIMO_RESOURCE"
 if [[ -f "$APP_DIR/Contents/Resources/$FIREBALL_RESOURCE" ]]; then
   install -m 644 "$APP_DIR/Contents/Resources/$FIREBALL_RESOURCE" "$AGENT_APP_DIR/Contents/Resources/$FIREBALL_RESOURCE"
 fi

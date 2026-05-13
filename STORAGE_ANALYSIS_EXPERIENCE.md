@@ -1,4 +1,10 @@
-# RightClickKit 存储分析实现经验
+# RightClickKit 存储/目录分析实现经验
+
+Last updated: 2026-05-13
+
+> 项目级 Agent、小精灵、imagegen/provider、文档维护经验已拆到
+> `RIGHTCLICKKIT_EXPERIENCE.md`。本文继续聚焦 Storage Analysis 和
+> Directory Tree 这类文件系统分析工具的性能与交互经验。
 
 这份记录梳理了从最初需求到当前版本的实现过程，重点记录用过的 skills、遇到的问题、解决方式，以及后续继续做类似 native macOS 工具时值得复用的经验。
 
@@ -211,11 +217,39 @@
 
 经验：状态视觉必须和状态文本一致。只要文本是 Complete，就不能出现任何“还在忙”的动画；否则用户会不信任进度系统。
 
+## Tree Viewer 追加经验
+
+### 14. Tree Text 要像终端一样轻
+
+问题：早期 tree 文本和左侧结构视图都承担太多交互与布局责任，导致用户感觉“正常 `tree` 都不卡，你这个怎么卡”。
+
+解决：
+
+- Structure Map 改成更接近 `tree` 命令输出的文本方案。
+- Tree text 避免复杂逐节点富 UI，优先保证滚动和复制顺畅。
+- 深度不是固定 limit，而是用户可以动态调整的 level。
+- 对长行保留水平阅读能力，避免为了卡片/标签排版强行换行。
+
+经验：目录树视图不是营销页，也不是卡片流。核心是“像命令行 tree 一样快、可复制、可扫读”，再逐步加原生增强。
+
+### 15. 左侧 Outline 和正文性能要分开看
+
+问题：正文 tree text 已经不卡，但左侧 outline 仍然卡，说明瓶颈不在同一个地方。
+
+解决方向：
+
+- 左侧点击只展开当前分支，不触发大范围重算。
+- 文件夹点击要能继续深入，但只加载必要子节点。
+- 搜索/过滤/选择状态不要导致整棵树重建。
+
+经验：同一个窗口里的两个视图可能有完全不同的性能瓶颈。优化时要分别测正文、outline、inspector、搜索，而不是笼统说“tree 卡”。
+
 ## 当前架构要点
 
-- `rck` CLI 负责安装服务、生成目录树、启动存储分析 viewer。
+- `rck` CLI 负责安装服务、启动目录树和存储分析 viewer。
 - 主 App `RightClickKitApp` 负责配置 Quick Actions。
 - `RightClickKitStorageView` 是独立 helper App，用原生窗口展示存储分析。
+- `RightClickKitTreeView` 是独立 helper App，用原生窗口展示目录树和 tree text。
 - `LazyStorageScanner` 负责异步、并行、逐层发布扫描快照。
 - `StorageScanModel` 负责缓存、递归队列、进度和 UI 状态。
 - `SunburstChartView` 负责图表绘制，`ChartHitTestView` 负责 AppKit 命中测试。
@@ -239,10 +273,10 @@ swift build --disable-sandbox --disable-build-manifest-caching --cache-path .bui
 
 ## 后续继续优化方向
 
-- 给后台扫描增加暂停/继续或性能模式。
-- 在 UI 上显示 queued/active recursive scan 数量。
-- 优先扫描当前用户下钻分支，而不是只按全局队列顺序。
+- 继续给后台扫描调优暂停/继续和性能模式。
 - 给 rose chart 增加 breadcrumb 和更明确的 hover 高亮。
+- 给 Tree outline 做更细粒度的 lazy loading 和选择状态隔离。
+- 给 tree text 增加更好的大目录复制/导出体验。
 - 增加更真实的大目录性能测试，尤其是 100GB+、大量小文件、权限拒绝目录。
 
 ## 最重要的经验

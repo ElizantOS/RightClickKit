@@ -48,6 +48,28 @@ private enum SpriteMetrics {
     static let aspectRatio = CGFloat(cellWidth) / CGFloat(cellHeight)
 }
 
+private enum AmbientPetPlay {
+    static let oneSecond: UInt64 = 1_000_000_000
+
+    static func nextDelayNanoseconds() -> UInt64 {
+        UInt64.random(in: 8...18) * oneSecond
+    }
+
+    static func nextReaction() -> (state: PetState, durationNanoseconds: UInt64) {
+        let choices: [(state: PetState, durationNanoseconds: UInt64)] = [
+            (.waving, 2_300_000_000),
+            (.waving, 2_300_000_000),
+            (.jumping, 2_100_000_000),
+            (.jumping, 2_100_000_000),
+            (.waiting, 2_600_000_000),
+            (.review, 2_800_000_000),
+            (.runningLeft, 1_700_000_000),
+            (.runningRight, 1_700_000_000)
+        ]
+        return choices.randomElement() ?? (.waving, 2_300_000_000)
+    }
+}
+
 enum PetOverlayScale: String, CaseIterable {
     case tiny
     case small
@@ -102,6 +124,9 @@ struct PetOverlayView: View {
     @State private var isPointerHovering = false
     @State private var isDragging = false
     @State private var activityPollTask: Task<Void, Never>?
+    @State private var ambientPlayTask: Task<Void, Never>?
+    @State private var temporaryReactionState: PetState?
+    @State private var temporaryReturnTask: Task<Void, Never>?
 
     let onScaleChanged: (PetOverlayScale) -> Void
     let onHide: () -> Void
@@ -122,14 +147,13 @@ struct PetOverlayView: View {
                 .contentShape(Rectangle())
                 .gesture(dragGesture)
                 .onTapGesture {
-                    withAnimation(.snappy(duration: 0.16)) {
-                        state = state == .waving ? .idle : .waving
-                    }
+                    playTemporaryReaction(.waving, durationNanoseconds: 2_300_000_000)
                 }
                 .onHover { isHovered in
                     isPointerHovering = isHovered
                     guard !isDragging else { return }
                     if isHovered {
+                        clearTemporaryReaction()
                         state = .jumping
                     } else if state == .jumping {
                         applyActivityState()
@@ -199,10 +223,14 @@ struct PetOverlayView: View {
         .onAppear {
             refreshActivity()
             startActivityPolling()
+            startAmbientPlay()
         }
         .onDisappear {
             activityPollTask?.cancel()
             activityPollTask = nil
+            ambientPlayTask?.cancel()
+            ambientPlayTask = nil
+            clearTemporaryReaction()
         }
         .onChange(of: scale) { _, newValue in
             PetOverlayPreferences.scale = newValue
@@ -264,6 +292,20 @@ struct PetOverlayView: View {
         }
     }
 
+    private func startAmbientPlay() {
+        ambientPlayTask?.cancel()
+        ambientPlayTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: AmbientPetPlay.nextDelayNanoseconds())
+                guard !Task.isCancelled else { return }
+
+                await MainActor.run {
+                    tryPlayAmbientReaction()
+                }
+            }
+        }
+    }
+
     private func refreshActivity() {
         activitySummary = AgentActions.activitySummary()
         applyActivityState()
@@ -274,12 +316,63 @@ struct PetOverlayView: View {
             return
         }
 
+        if activitySummary.mascotState != .idle {
+            clearTemporaryReaction()
+        }
+
         if isPointerHovering, activitySummary.mascotState == .idle {
             state = .jumping
             return
         }
 
+        if activitySummary.mascotState == .idle,
+           let temporaryReactionState {
+            state = temporaryReactionState
+            return
+        }
+
         state = PetState(activityState: activitySummary.mascotState)
+    }
+
+    private var canPlayAmbientReaction: Bool {
+        activitySummary.mascotState == .idle &&
+            temporaryReactionState == nil &&
+            state == .idle &&
+            !isPointerHovering &&
+            !isDragging
+    }
+
+    private func tryPlayAmbientReaction() {
+        guard canPlayAmbientReaction else { return }
+
+        let reaction = AmbientPetPlay.nextReaction()
+        playTemporaryReaction(reaction.state, durationNanoseconds: reaction.durationNanoseconds)
+    }
+
+    private func playTemporaryReaction(_ reactionState: PetState, durationNanoseconds: UInt64) {
+        temporaryReturnTask?.cancel()
+        temporaryReactionState = reactionState
+
+        withAnimation(.snappy(duration: 0.16)) {
+            state = reactionState
+        }
+
+        temporaryReturnTask = Task {
+            try? await Task.sleep(nanoseconds: durationNanoseconds)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                temporaryReactionState = nil
+                temporaryReturnTask = nil
+                applyActivityState()
+            }
+        }
+    }
+
+    private func clearTemporaryReaction() {
+        temporaryReturnTask?.cancel()
+        temporaryReturnTask = nil
+        temporaryReactionState = nil
     }
 
     private var dragGesture: some Gesture {
@@ -289,6 +382,7 @@ struct PetOverlayView: View {
                     dragStartDate = Date()
                     hasDragged = false
                     isDragging = true
+                    clearTemporaryReaction()
                     onDragBegan()
                 }
 
@@ -313,7 +407,7 @@ struct PetOverlayView: View {
                     applyActivityState()
                 } else {
                     isDragging = false
-                    state = .waving
+                    playTemporaryReaction(.waving, durationNanoseconds: 2_300_000_000)
                 }
                 dragStartDate = nil
                 hasDragged = false
@@ -466,14 +560,17 @@ private struct CodexSprite: View {
 private final class SpriteAtlas {
     static let shared = SpriteAtlas()
 
-    private let atlas: CGImage?
+    private var atlas: CGImage?
+    private var atlasURL: URL?
+    private var atlasModifiedAt: Date?
     private var cache: [SpriteFrame: NSImage] = [:]
 
     private init() {
-        atlas = Self.loadAtlas()
+        reloadIfNeeded()
     }
 
     func image(for frame: SpriteFrame) -> NSImage? {
+        reloadIfNeeded()
         if let cached = cache[frame] {
             return cached
         }
@@ -494,22 +591,136 @@ private final class SpriteAtlas {
         return image
     }
 
-    private static func loadAtlas() -> CGImage? {
-        for url in atlasCandidates where FileManager.default.fileExists(atPath: url.path) {
-            if let image = NSImage(contentsOf: url),
-               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                return cgImage
+    private func reloadIfNeeded() {
+        guard let source = Self.resolveAtlasSource() else {
+            atlas = nil
+            atlasURL = nil
+            atlasModifiedAt = nil
+            cache.removeAll()
+            return
+        }
+
+        let modifiedAt = (try? FileManager.default.attributesOfItem(atPath: source.path)[.modificationDate]) as? Date
+        guard source != atlasURL || modifiedAt != atlasModifiedAt else {
+            return
+        }
+
+        atlasURL = source
+        atlasModifiedAt = modifiedAt
+        atlas = Self.loadAtlas(from: source)
+        cache.removeAll()
+    }
+
+    private static func loadAtlas(from url: URL) -> CGImage? {
+        guard FileManager.default.fileExists(atPath: url.path),
+              let image = NSImage(contentsOf: url),
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else {
+            return nil
+        }
+        return cgImage
+    }
+
+    private static func resolveAtlasSource() -> URL? {
+        let selectedID = selectedPetID()
+        for url in builtInAtlasCandidates(for: selectedID) where FileManager.default.fileExists(atPath: url.path) {
+            return url
+        }
+
+        if let userPet = selectedUserPetAtlas(petID: selectedID) {
+            return userPet
+        }
+
+        for url in builtInAtlasCandidates(for: defaultPetID) where FileManager.default.fileExists(atPath: url.path) {
+            return url
+        }
+        return nil
+    }
+
+    private static var defaultPetID: String {
+        "rck-dimo"
+    }
+
+    private static func selectedPetID() -> String {
+        let paths = RCKPaths()
+        let selectedID = (try? String(contentsOf: paths.currentPetURL, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return selectedID?.isEmpty == false ? selectedID! : defaultPetID
+    }
+
+    private static func selectedUserPetAtlas(petID: String) -> URL? {
+        let paths = RCKPaths()
+        let fileManager = FileManager.default
+        let candidates = [
+            paths.petsDirectory.appendingPathComponent(petID, isDirectory: true),
+            paths.petsDirectory.appendingPathComponent("current", isDirectory: true)
+        ]
+
+        for folder in candidates {
+            if let manifestAtlas = atlasURL(fromManifestIn: folder) {
+                return manifestAtlas
+            }
+            let spritesheet = folder.appendingPathComponent("spritesheet.webp")
+            if fileManager.fileExists(atPath: spritesheet.path) {
+                return spritesheet
             }
         }
         return nil
     }
 
-    private static var atlasCandidates: [URL] {
+    private static func atlasURL(fromManifestIn folder: URL) -> URL? {
+        let manifestURL = folder.appendingPathComponent("pet.json")
+        guard let data = try? Data(contentsOf: manifestURL),
+              let manifest = try? JSONDecoder().decode(PetAssetManifest.self, from: data),
+              let rawPath = manifest.spritesheetPath
+        else {
+            return nil
+        }
+
+        let url: URL
+        if rawPath.hasPrefix("/") {
+            url = URL(fileURLWithPath: rawPath)
+        } else {
+            url = folder.appendingPathComponent(rawPath)
+        }
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    private static func builtInAtlasCandidates(for petID: String) -> [URL] {
+        switch petID {
+        case "fireball":
+            return bundledResourceCandidates(named: "fireball-spritesheet-v4-BtU8R9Qp")
+        case "rck-dimo", "default":
+            return bundledResourceCandidates(named: "rck-dimo-spritesheet")
+        default:
+            return []
+        }
+    }
+
+    private static func bundledResourceCandidates(named resourceName: String) -> [URL] {
         [
-            Bundle.main.url(forResource: "fireball-spritesheet-v4-BtU8R9Qp", withExtension: "webp"),
-            Bundle.main.resourceURL?.appendingPathComponent("fireball-spritesheet-v4-BtU8R9Qp.webp"),
-            AgentPaths.mainAppURL.appendingPathComponent("Contents/Resources/fireball-spritesheet-v4-BtU8R9Qp.webp")
+            Bundle.main.url(forResource: resourceName, withExtension: "webp"),
+            Bundle.main.resourceURL?.appendingPathComponent("\(resourceName).webp"),
+            AgentPaths.mainAppURL.appendingPathComponent("Contents/Resources/\(resourceName).webp")
         ].compactMap { $0 }
+    }
+}
+
+private struct PetAssetManifest: Decodable {
+    let spritesheet: String?
+    let explicitSpritesheetPath: String?
+    let spritesheetURL: String?
+    let spritesheetUrl: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case spritesheet
+        case explicitSpritesheetPath = "spritesheetPath"
+        case spritesheetURL
+        case spritesheetUrl
+    }
+
+    var spritesheetPath: String? {
+        spritesheet ?? explicitSpritesheetPath ?? spritesheetURL ?? spritesheetUrl
     }
 }
 

@@ -33,6 +33,14 @@ public struct RCKPaths {
         supportDirectory.appendingPathComponent("activity.lock")
     }
 
+    public var petsDirectory: URL {
+        supportDirectory.appendingPathComponent("pets", isDirectory: true)
+    }
+
+    public var currentPetURL: URL {
+        supportDirectory.appendingPathComponent("current-pet.txt")
+    }
+
     public var userServicesDirectory: URL {
         home.appendingPathComponent("Library/Services", isDirectory: true)
     }

@@ -1,0 +1,3 @@
+display_name: RightClickKit Pet
+short_description: Create and install dynamic companion pet assets.
+default_prompt: Create, install, switch, or review a RightClickKit companion pet using the hatch-pet atlas contract.

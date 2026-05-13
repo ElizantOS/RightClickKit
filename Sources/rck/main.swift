@@ -4,6 +4,11 @@ import RightClickKitCore
 struct RCKCLI {
     let arguments: [String]
     let paths = RCKPaths()
+    private let defaultPetID = "rck-dimo"
+    private let builtInPetNames = [
+        "rck-dimo": "RCK Dimo",
+        "fireball": "Built-in Fireball"
+    ]
 
     func run() -> Int32 {
         do {
@@ -36,6 +41,9 @@ struct RCKCLI {
                 return 0
             case "notify":
                 try notify(rest)
+                return 0
+            case "pet":
+                try pet(rest)
                 return 0
             case "config":
                 try config()
@@ -215,6 +223,62 @@ struct RCKCLI {
         }
     }
 
+    private func pet(_ args: [String]) throws {
+        guard let command = args.first else {
+            throw RightClickKitError.invalidValue(
+                "usage: rck pet list|current|use <id|rck-dimo|fireball|default>|install <pet-folder>",
+                URL(fileURLWithPath: ".")
+            )
+        }
+
+        switch command {
+        case "list":
+            let current = currentPetID()
+            let installed = try installedPetIDs().filter { builtInPetNames[$0] == nil }
+            print("rck-dimo\t\(current == "rck-dimo" ? "current" : "available")\tRCK Dimo")
+            print("fireball\t\(current == "fireball" ? "current" : "available")\tBuilt-in Fireball")
+            for id in installed {
+                print("\(id)\t\(current == id ? "current" : "available")\t\(petDisplayName(id: id) ?? id)")
+            }
+        case "current":
+            print(currentPetID())
+        case "use":
+            guard let id = args.dropFirst().first else {
+                throw RightClickKitError.invalidValue("usage: rck pet use <id|rck-dimo|fireball|default>", URL(fileURLWithPath: "."))
+            }
+            if id == "default" || id == defaultPetID {
+                try? FileManager.default.removeItem(at: paths.currentPetURL)
+                print("Current pet: \(defaultPetID)")
+                return
+            }
+            if builtInPetNames[id] != nil {
+                try FileManager.default.createDirectory(at: paths.supportDirectory, withIntermediateDirectories: true)
+                try "\(id)\n".write(to: paths.currentPetURL, atomically: true, encoding: .utf8)
+                print("Current pet: \(id)")
+                return
+            }
+            let folder = paths.petsDirectory.appendingPathComponent(id, isDirectory: true)
+            guard isValidPetFolder(folder) else {
+                throw RightClickKitError.invalidValue("pet not installed or missing spritesheet.webp: \(id)", folder)
+            }
+            try FileManager.default.createDirectory(at: paths.supportDirectory, withIntermediateDirectories: true)
+            try "\(id)\n".write(to: paths.currentPetURL, atomically: true, encoding: .utf8)
+            print("Current pet: \(id)")
+        case "install":
+            guard let rawFolder = args.dropFirst().first else {
+                throw RightClickKitError.invalidValue("usage: rck pet install <pet-folder>", URL(fileURLWithPath: "."))
+            }
+            let source = URL(fileURLWithPath: rawFolder).standardizedFileURL
+            let id = try installPet(from: source)
+            print("Installed pet: \(id)")
+        default:
+            throw RightClickKitError.invalidValue(
+                "usage: rck pet list|current|use <id|rck-dimo|fireball|default>|install <pet-folder>",
+                URL(fileURLWithPath: ".")
+            )
+        }
+    }
+
     private func config() throws {
         let config = try ConfigStore(paths: paths).load()
         let data = try JSONEncoder.pretty.encode(config)
@@ -267,6 +331,118 @@ struct RCKCLI {
             )
         }
         return level
+    }
+
+    private func currentPetID() -> String {
+        let selected = (try? String(contentsOf: paths.currentPetURL, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return selected?.isEmpty == false ? selected! : defaultPetID
+    }
+
+    private func installedPetIDs() throws -> [String] {
+        guard FileManager.default.fileExists(atPath: paths.petsDirectory.path) else {
+            return []
+        }
+        return try FileManager.default.contentsOfDirectory(
+            at: paths.petsDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        .filter { isValidPetFolder($0) }
+        .map(\.lastPathComponent)
+        .sorted()
+    }
+
+    private func petDisplayName(id: String) -> String? {
+        let manifestURL = paths.petsDirectory
+            .appendingPathComponent(id, isDirectory: true)
+            .appendingPathComponent("pet.json")
+        guard let data = try? Data(contentsOf: manifestURL),
+              let manifest = try? JSONDecoder().decode(RCKPetManifest.self, from: data)
+        else {
+            return nil
+        }
+        return manifest.displayName ?? manifest.name
+    }
+
+    private func installPet(from source: URL) throws -> String {
+        guard isValidPetFolder(source) else {
+            throw RightClickKitError.invalidValue("pet folder must contain pet.json and/or spritesheet.webp", source)
+        }
+
+        let manifest = readPetManifest(in: source)
+        let id = sanitizePetID(manifest?.id ?? manifest?.name ?? source.lastPathComponent)
+        guard !id.isEmpty else {
+            throw RightClickKitError.invalidValue("pet id is empty", source)
+        }
+
+        let destination = paths.petsDirectory.appendingPathComponent(id, isDirectory: true)
+        try FileManager.default.createDirectory(at: paths.petsDirectory, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.removeItem(at: destination)
+        }
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+
+        let sourceSpritesheet = try petSpritesheetURL(in: source)
+        try FileManager.default.copyItem(
+            at: sourceSpritesheet,
+            to: destination.appendingPathComponent("spritesheet.webp")
+        )
+
+        let sourceManifest = source.appendingPathComponent("pet.json")
+        if FileManager.default.fileExists(atPath: sourceManifest.path) {
+            try FileManager.default.copyItem(
+                at: sourceManifest,
+                to: destination.appendingPathComponent("pet.json")
+            )
+        } else {
+            let manifest = RCKPetManifest(id: id, name: id, displayName: id, spritesheet: "spritesheet.webp")
+            let data = try JSONEncoder.pretty.encode(manifest)
+            try data.write(to: destination.appendingPathComponent("pet.json"), options: [.atomic])
+        }
+        return id
+    }
+
+    private func isValidPetFolder(_ folder: URL) -> Bool {
+        (try? petSpritesheetURL(in: folder)) != nil
+    }
+
+    private func petSpritesheetURL(in folder: URL) throws -> URL {
+        if let manifest = readPetManifest(in: folder),
+           let rawPath = manifest.spritesheetPath
+        {
+            let url = rawPath.hasPrefix("/") ? URL(fileURLWithPath: rawPath) : folder.appendingPathComponent(rawPath)
+            if FileManager.default.fileExists(atPath: url.path) {
+                return url
+            }
+        }
+
+        let fallback = folder.appendingPathComponent("spritesheet.webp")
+        if FileManager.default.fileExists(atPath: fallback.path) {
+            return fallback
+        }
+        throw RightClickKitError.invalidValue("missing spritesheet.webp", folder)
+    }
+
+    private func readPetManifest(in folder: URL) -> RCKPetManifest? {
+        let url = folder.appendingPathComponent("pet.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(RCKPetManifest.self, from: data)
+    }
+
+    private func sanitizePetID(_ rawValue: String) -> String {
+        rawValue
+            .lowercased()
+            .map { character in
+                character.isLetter || character.isNumber || character == "-" || character == "_" ? character : "-"
+            }
+            .reduce(into: "") { result, character in
+                if character == "-", result.last == "-" {
+                    return
+                }
+                result.append(character)
+            }
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-_"))
     }
 
     private func executablePath() -> String {
@@ -417,8 +593,55 @@ struct RCKCLI {
           rck action run <action-id> [paths...]
           rck notify <title> [--body TEXT] [--level info|success|warning|danger] [--status running|waiting|review|failed|done] [--source NAME] [--id ID]
           rck notify list|read|clear
+          rck pet list|current|use <id|rck-dimo|fireball|default>|install <pet-folder>
           rck config
         """)
+    }
+}
+
+private struct RCKPetManifest: Codable {
+    var id: String?
+    var name: String?
+    var displayName: String?
+    var description: String?
+    var spritesheet: String?
+    var explicitSpritesheetPath: String?
+    var spritesheetURL: String?
+    var spritesheetUrl: String?
+
+    init(
+        id: String? = nil,
+        name: String? = nil,
+        displayName: String? = nil,
+        description: String? = nil,
+        spritesheet: String? = nil,
+        explicitSpritesheetPath: String? = nil,
+        spritesheetURL: String? = nil,
+        spritesheetUrl: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.displayName = displayName
+        self.description = description
+        self.spritesheet = spritesheet
+        self.explicitSpritesheetPath = explicitSpritesheetPath
+        self.spritesheetURL = spritesheetURL
+        self.spritesheetUrl = spritesheetUrl
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case displayName
+        case description
+        case spritesheet
+        case explicitSpritesheetPath = "spritesheetPath"
+        case spritesheetURL
+        case spritesheetUrl
+    }
+
+    var spritesheetPath: String? {
+        spritesheet ?? explicitSpritesheetPath ?? spritesheetURL ?? spritesheetUrl
     }
 }
 
