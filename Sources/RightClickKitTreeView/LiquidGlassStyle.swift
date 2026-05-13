@@ -11,6 +11,7 @@ struct RCKGlassGroup<Content: View>: View {
 
     @ViewBuilder
     var body: some View {
+        #if swift(>=6.3)
         if #available(macOS 26.0, *) {
             GlassEffectContainer(spacing: spacing) {
                 content()
@@ -18,6 +19,9 @@ struct RCKGlassGroup<Content: View>: View {
         } else {
             content()
         }
+        #else
+        content()
+        #endif
     }
 }
 
@@ -40,6 +44,7 @@ private struct RCKGlassSurfaceModifier<S: Shape>: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
+        #if swift(>=6.3)
         if #available(macOS 26.0, *) {
             content
                 .glassEffect(interactive ? Glass.regular.interactive() : .regular, in: shape)
@@ -48,6 +53,11 @@ private struct RCKGlassSurfaceModifier<S: Shape>: ViewModifier {
                 .background(.regularMaterial, in: shape)
                 .overlay(shape.stroke(Color.primary.opacity(0.08), lineWidth: 1))
         }
+        #else
+        content
+            .background(.regularMaterial, in: shape)
+            .overlay(shape.stroke(Color.primary.opacity(0.08), lineWidth: 1))
+        #endif
     }
 }
 
@@ -56,6 +66,7 @@ private struct RCKGlassButtonModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
+        #if swift(>=6.3)
         if #available(macOS 26.0, *) {
             if prominent {
                 content.buttonStyle(.glassProminent)
@@ -69,5 +80,12 @@ private struct RCKGlassButtonModifier: ViewModifier {
                 content.buttonStyle(.bordered)
             }
         }
+        #else
+        if prominent {
+            content.buttonStyle(.borderedProminent)
+        } else {
+            content.buttonStyle(.bordered)
+        }
+        #endif
     }
 }
